@@ -14,4 +14,4 @@ Disallow: /my-quizzes
 Disallow: /reset-password
 Disallow: /verify-email
 
-Sitemap: https://almeaacodax.vercel.app/sitemap.xml
+Sitemap: https://almeaavscod.vercel.app/sitemap.xml

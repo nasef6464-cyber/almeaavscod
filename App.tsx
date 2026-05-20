@@ -212,7 +212,7 @@ const resolveBootstrapProfile = (path: string): BootstrapProfile => {
   };
 };
 
-const SEO_BASE_URL = 'https://almeaacodax.vercel.app';
+const SEO_BASE_URL = 'https://almeaavscod.vercel.app';
 
 const SEO_PRIVATE_PREFIXES = [
   '/dashboard',

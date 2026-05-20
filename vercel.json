@@ -2,7 +2,7 @@
   "rewrites": [
     {
       "source": "/api/:path*",
-      "destination": "https://almeaacodax-k2ux.onrender.com/api/:path*"
+      "destination": "https://almeaavscod.onrender.com/api/:path*"
     },
     {
       "source": "/:path*",

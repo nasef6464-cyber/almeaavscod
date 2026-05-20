@@ -18,7 +18,7 @@ function parseAllowedOrigins() {
   const configuredOrigins = env.CORS_ALLOWED_ORIGINS.split(",")
     .map((origin) => origin.trim())
     .filter(Boolean);
-  const productionOrigins = [env.CLIENT_URL, "https://almeaacodax.vercel.app", ...configuredOrigins];
+  const productionOrigins = [env.CLIENT_URL, "https://almeaavscod.vercel.app", ...configuredOrigins];
   const developmentOrigins = [
     "http://localhost:3000",
     "http://localhost:5173",

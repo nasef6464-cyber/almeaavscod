@@ -10,13 +10,14 @@ import { users, accessCodes as pgAccessCodes, b2bPackages as pgB2bPackages } fro
 import { UserModel } from "../models/User.js";
 import { AccessCodeModel } from "../models/AccessCode.js";
 import { B2BPackageModel } from "../models/B2BPackage.js";
-import { requireAuth, requireRole } from "../middleware/auth.js";
+import { requireAuth, requireRole, setAuthCookie, clearAuthCookie } from "../middleware/auth.js";
 import { signAccessToken } from "../utils/jwt.js";
 import { applyPurchaseToUser } from "../services/applyPurchaseToUser.js";
 import { env } from "../config/env.js";
 import { sendEmailVerification, verifyEmail, sendPasswordResetEmail, resetPassword } from "../services/authService.js";
 import { authRateLimiter, sensitiveActionRateLimiter } from "../middleware/rateLimiters.js";
-import { handleGoogleAuth, getGoogleAuthUrl } from "../services/googleAuthService.js";
+import { handleGoogleAuth, handleGoogleCallback, getGoogleAuthUrl } from "../services/googleAuthService.js";
+import { issueCsrfToken } from "../middleware/csrf.js";
 
 const USE_PG = () => env.USE_POSTGRES && env.DATABASE_URL;
 
@@ -81,6 +82,14 @@ const buildDocumentQuery = (value: string) =>
 
 export const authRouter = Router();
 
+authRouter.get(
+  "/csrf-token",
+  asyncHandler(async (_req, res) => {
+    const token = issueCsrfToken(res);
+    return res.json({ csrfToken: token });
+  }),
+);
+
 authRouter.post(
   "/register",
   authRateLimiter,
@@ -118,6 +127,8 @@ authRouter.post(
         name: user.name,
       });
 
+      setAuthCookie(res, token);
+
       return res.status(StatusCodes.CREATED).json({
         token,
         user: serializeUser(user),
@@ -137,6 +148,8 @@ authRouter.post(
       role: user.role,
       name: user.name,
     });
+
+    setAuthCookie(res, token);
 
     return res.status(StatusCodes.CREATED).json({
       token,
@@ -176,6 +189,8 @@ authRouter.post(
       role: user.role as "student" | "teacher" | "admin" | "supervisor" | "parent",
       name: user.name,
     });
+
+    setAuthCookie(res, token);
 
     return res.json({
       token,
@@ -548,6 +563,15 @@ authRouter.post(
   }),
 );
 
+authRouter.post(
+  "/logout",
+  asyncHandler(async (_req, res) => {
+    clearAuthCookie(res);
+    res.clearCookie("almeaa_csrf_token", { path: "/" });
+    return res.status(StatusCodes.NO_CONTENT).send();
+  }),
+);
+
 authRouter.get(
   "/google/url",
   asyncHandler(async (_req, res) => {
@@ -558,6 +582,52 @@ authRouter.get(
       });
     }
     return res.json({ url });
+  }),
+);
+
+authRouter.get(
+  "/google/start",
+  asyncHandler(async (req, res) => {
+    const returnTo = (req.query.returnTo as string) || "/";
+    const url = getGoogleAuthUrl(returnTo);
+    if (!url) {
+      return res.status(StatusCodes.NOT_IMPLEMENTED).json({
+        message: "Google OAuth is not configured",
+      });
+    }
+    return res.redirect(url);
+  }),
+);
+
+authRouter.get(
+  "/google/callback",
+  asyncHandler(async (req, res) => {
+    const { code, state } = req.query as { code?: string; state?: string };
+
+    if (!code) {
+      const frontendUrl = env.CLIENT_URL || "https://almeaavscod.vercel.app";
+      return res.redirect(`${frontendUrl}#/?oauth_provider=google&oauth_error=missing_code`);
+    }
+
+    let returnTo = "/";
+    if (state) {
+      try {
+        const decoded = JSON.parse(Buffer.from(state, "base64url").toString());
+        if (decoded.returnTo) returnTo = decoded.returnTo;
+      } catch {}
+    }
+
+    try {
+      const result = await handleGoogleCallback(code);
+      setAuthCookie(res, result.token);
+      const frontendUrl = env.CLIENT_URL || "https://almeaavscod.vercel.app";
+      const redirectUrl = `${frontendUrl}#/?oauth_provider=google&oauth_return=${encodeURIComponent(returnTo)}`;
+      return res.redirect(redirectUrl);
+    } catch (err) {
+      const frontendUrl = env.CLIENT_URL || "https://almeaavscod.vercel.app";
+      const errorMsg = err instanceof Error ? err.message : "google_auth_failed";
+      return res.redirect(`${frontendUrl}#/?oauth_provider=google&oauth_error=${encodeURIComponent(errorMsg)}`);
+    }
   }),
 );
 

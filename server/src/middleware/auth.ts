@@ -4,14 +4,37 @@ import { env } from "../config/env.js";
 import { verifyAccessToken } from "../utils/jwt.js";
 import type { AppRole } from "../constants/roles.js";
 
+export const AUTH_COOKIE_NAME = "almeaa_access_token";
+
+export function setAuthCookie(res: Response, token: string) {
+  res.cookie(AUTH_COOKIE_NAME, token, {
+    httpOnly: true,
+    secure: env.NODE_ENV === "production",
+    sameSite: env.NODE_ENV === "production" ? "none" : "lax",
+    path: "/",
+    maxAge: 7 * 24 * 60 * 60 * 1000,
+  });
+}
+
+export function clearAuthCookie(res: Response) {
+  res.clearCookie(AUTH_COOKIE_NAME, { path: "/" });
+}
+
 function resolveAuthUser(req: Request) {
-  const raw = req.headers.authorization;
-  if (!raw?.startsWith("Bearer ")) {
-    return null;
+  let token: string | null = null;
+
+  const authHeader = req.headers.authorization;
+  if (authHeader?.startsWith("Bearer ")) {
+    token = authHeader.replace("Bearer ", "");
   }
 
+  if (!token && req.cookies?.[AUTH_COOKIE_NAME]) {
+    token = req.cookies[AUTH_COOKIE_NAME];
+  }
+
+  if (!token) return null;
+
   try {
-    const token = raw.replace("Bearer ", "");
     return verifyAccessToken(token);
   } catch {
     return null;

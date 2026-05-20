@@ -13,7 +13,7 @@ type SeoEntry = {
   title: string;
 };
 
-const cleanBaseUrl = () => (env.CLIENT_URL || "https://almeaacodax.vercel.app").replace(/\/+$/, "");
+const cleanBaseUrl = () => (env.CLIENT_URL || "https://almeaavscod.vercel.app").replace(/\/+$/, "");
 
 const xmlEscape = (value: string) =>
   value

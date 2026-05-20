@@ -3,7 +3,8 @@ import { roles } from "../constants/roles.js";
 
 const userSchema = new Schema(
   {
-    name: { type: String, required: true, trim: true },
+    googleId: { type: String, default: null },
+  name: { type: String, required: true, trim: true },
     email: { type: String, required: true, unique: true, lowercase: true, trim: true },
     passwordHash: { type: String, required: true },
     avatar: { type: String, default: "" },
@@ -38,6 +39,7 @@ const userSchema = new Schema(
   },
 );
 
+userSchema.index({ googleId: 1 }, { sparse: true });
 userSchema.index({ emailVerificationToken: 1 }, { sparse: true });
 userSchema.index({ passwordResetToken: 1 }, { sparse: true });
 userSchema.index({ role: 1 });

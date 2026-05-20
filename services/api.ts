@@ -1,5 +1,5 @@
 const runtimeHostname = (globalThis as { location?: { hostname?: string } }).location?.hostname || "";
-const productionApiBaseUrl = "https://almeaacodax-k2ux.onrender.com/api";
+const productionApiBaseUrl = "https://almeaavscod.onrender.com/api";
 const defaultApiBaseUrl =
   runtimeHostname === "almeaacodax.vercel.app" || runtimeHostname.endsWith(".vercel.app")
     ? productionApiBaseUrl

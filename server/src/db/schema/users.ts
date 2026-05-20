@@ -6,6 +6,7 @@ import { pgTable, text, integer, boolean, timestamp, varchar, jsonb, index } fro
 
 export const users = pgTable("users", {
   id: text("id").primaryKey(),
+  googleId: text("google_id"),
   name: text("name").notNull(),
   email: text("email").notNull().unique(),
   passwordHash: text("password_hash").notNull(),
