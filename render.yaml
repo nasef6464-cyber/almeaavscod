@@ -1,0 +1,42 @@
+services:
+  - type: web
+    name: almeaa-platform-server
+    env: node
+    region: frankfurt
+    plan: free
+    rootDir: server
+    buildCommand: npm install && npm run build
+    startCommand: node dist/server.js
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: 4000
+      - key: DATABASE_URL
+        sync: false
+      - key: USE_POSTGRES
+        value: "true"
+      - key: JWT_SECRET
+        generateValue: true
+      - key: JWT_EXPIRES_IN
+        value: 7d
+      - key: CLIENT_URL
+        sync: false
+      - key: CORS_ALLOWED_ORIGINS
+        sync: false
+      - key: AI_PROVIDER
+        value: gemini
+      - key: NOTIFICATION_QUEUE_ENABLED
+        value: "false"
+      - key: EMAIL_PROVIDER
+        value: console
+      - key: WHATSAPP_PROVIDER
+        value: console
+      - key: ADMIN_NAME
+        value: Platform Admin
+      - key: ADMIN_EMAIL
+        value: admin@almeaaplatform.com
+      - key: ADMIN_PASSWORD
+        generateValue: true
+      - key: MAX_FILE_SIZE
+        value: "10485760"
