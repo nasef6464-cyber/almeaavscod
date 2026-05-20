@@ -17,7 +17,11 @@ async function main() {
   const sqlPath = join(rootDir, "drizzle", "0000_initial_schema.sql");
   const sql = readFileSync(sqlPath, "utf-8");
 
-  const pool = new pg.Pool({ connectionString: databaseUrl, ssl: { rejectUnauthorized: false } });
+  const pool = new pg.Pool({
+    connectionString: databaseUrl,
+    ssl: { rejectUnauthorized: false },
+    connectionTimeoutMillis: 15000,
+  });
 
   try {
     const statements = sql

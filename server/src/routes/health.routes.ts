@@ -11,7 +11,9 @@ healthRouter.get("/", async (_req, res) => {
     try {
       await db.execute({ raw: "SELECT 1" } as any);
       pgStatus = "connected";
-    } catch {}
+    } catch (e: any) {
+      pgStatus = `error: ${(e.message || "").slice(0, 60)}`;
+    }
     return res.json({
       status: "ok",
       database: `postgresql (${pgStatus})`,
