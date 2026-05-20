@@ -1,4 +1,4 @@
-import { pgTable, text, integer, boolean, varchar, jsonb, timestamp } from "drizzle-orm/pg-core";
+import { pgTable, text, integer, boolean, varchar, jsonb, timestamp, index } from "drizzle-orm/pg-core";
 
 // ============================================================
 // Courses, Lessons, Topics
@@ -52,7 +52,14 @@ export const courses = pgTable("courses", {
   revenueSharePercentage: integer("revenue_share_percentage"),
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
-});
+}, (table) => [
+  index("idx_courses_path_id").on(table.pathId),
+  index("idx_courses_subject_id").on(table.subjectId),
+  index("idx_courses_is_published").on(table.isPublished),
+  index("idx_courses_approval_status").on(table.approvalStatus),
+  index("idx_courses_owner_type").on(table.ownerType),
+  index("idx_courses_owner_id").on(table.ownerId),
+]);
 
 export const lessons = pgTable("lessons", {
   id: text("id").primaryKey(),
@@ -88,7 +95,13 @@ export const lessons = pgTable("lessons", {
   revenueSharePercentage: integer("revenue_share_percentage"),
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
-});
+}, (table) => [
+  index("idx_lessons_path_id").on(table.pathId),
+  index("idx_lessons_subject_id").on(table.subjectId),
+  index("idx_lessons_quiz_id").on(table.quizId),
+  index("idx_lessons_approval_status").on(table.approvalStatus),
+  index("idx_lessons_owner_type").on(table.ownerType),
+]);
 
 export const topics = pgTable("topics", {
   id: text("id").primaryKey(),
@@ -102,4 +115,8 @@ export const topics = pgTable("topics", {
   isLocked: boolean("is_locked").default(false),
   lessonIds: text("lesson_ids").array().default([]),
   quizIds: text("quiz_ids").array().default([]),
-});
+}, (table) => [
+  index("idx_topics_path_id").on(table.pathId),
+  index("idx_topics_subject_id").on(table.subjectId),
+  index("idx_topics_parent_id").on(table.parentId),
+]);

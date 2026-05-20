@@ -1,4 +1,4 @@
-import { pgTable, text, integer, varchar, jsonb, timestamp, boolean } from "drizzle-orm/pg-core";
+import { pgTable, text, integer, varchar, jsonb, timestamp, boolean, index } from "drizzle-orm/pg-core";
 
 // ============================================================
 // Groups, Library, Homepage, Activity
@@ -18,7 +18,11 @@ export const groups = pgTable("groups", {
   settings: jsonb("settings"),
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
-});
+}, (table) => [
+  index("idx_groups_type").on(table.type),
+  index("idx_groups_owner_id").on(table.ownerId),
+  index("idx_groups_parent_id").on(table.parentId),
+]);
 
 export const libraryItems = pgTable("library_items", {
   id: text("id").primaryKey(),
@@ -44,7 +48,12 @@ export const libraryItems = pgTable("library_items", {
   revenueSharePercentage: integer("revenue_share_percentage"),
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
-});
+}, (table) => [
+  index("idx_library_items_path_id").on(table.pathId),
+  index("idx_library_items_subject_id").on(table.subjectId),
+  index("idx_library_items_approval_status").on(table.approvalStatus),
+  index("idx_library_items_owner_type").on(table.ownerType),
+]);
 
 export const homepageSettings = pgTable("homepage_settings", {
   id: text("id").primaryKey(),
@@ -61,4 +70,8 @@ export const activities = pgTable("activities", {
   description: text("description").default(""),
   metadata: jsonb("metadata"),
   createdAt: timestamp("created_at").defaultNow(),
-});
+}, (table) => [
+  index("idx_activities_user_id").on(table.userId),
+  index("idx_activities_type").on(table.type),
+  index("idx_activities_created_at").on(table.createdAt),
+]);

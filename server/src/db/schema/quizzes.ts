@@ -1,4 +1,4 @@
-import { pgTable, text, integer, boolean, varchar, jsonb, timestamp } from "drizzle-orm/pg-core";
+import { pgTable, text, integer, boolean, varchar, jsonb, timestamp, index } from "drizzle-orm/pg-core";
 
 // ============================================================
 // Questions, Quizzes, Quiz Results, Attempts, Skill Progress
@@ -30,7 +30,12 @@ export const questions = pgTable("questions", {
   revenueSharePercentage: integer("revenue_share_percentage"),
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
-});
+}, (table) => [
+  index("idx_questions_path_id").on(table.pathId),
+  index("idx_questions_section_id").on(table.sectionId),
+  index("idx_questions_approval_status").on(table.approvalStatus),
+  index("idx_questions_owner_type").on(table.ownerType),
+]);
 
 export const quizzes = pgTable("quizzes", {
   id: text("id").primaryKey(),
@@ -64,7 +69,13 @@ export const quizzes = pgTable("quizzes", {
   revenueSharePercentage: integer("revenue_share_percentage"),
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
-});
+}, (table) => [
+  index("idx_quizzes_path_id").on(table.pathId),
+  index("idx_quizzes_subject_id").on(table.subjectId),
+  index("idx_quizzes_is_published").on(table.isPublished),
+  index("idx_quizzes_approval_status").on(table.approvalStatus),
+  index("idx_quizzes_owner_type").on(table.ownerType),
+]);
 
 export const quizResults = pgTable("quiz_results", {
   id: text("id").primaryKey(),
@@ -82,7 +93,12 @@ export const quizResults = pgTable("quiz_results", {
   questionReview: jsonb("question_review").default([]),
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
-});
+}, (table) => [
+  index("idx_quiz_results_user_id").on(table.userId),
+  index("idx_quiz_results_quiz_id").on(table.quizId),
+  index("idx_quiz_results_user_quiz").on(table.userId, table.quizId),
+  index("idx_quiz_results_created_at").on(table.createdAt),
+]);
 
 export const questionAttempts = pgTable("question_attempts", {
   id: text("id").primaryKey(),
@@ -98,7 +114,13 @@ export const questionAttempts = pgTable("question_attempts", {
   skillIds: text("skill_ids").array().default([]),
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
-});
+}, (table) => [
+  index("idx_question_attempts_user_id").on(table.userId),
+  index("idx_question_attempts_question_id").on(table.questionId),
+  index("idx_question_attempts_user_question").on(table.userId, table.questionId),
+  index("idx_question_attempts_path_id").on(table.pathId),
+  index("idx_question_attempts_subject_id").on(table.subjectId),
+]);
 
 export const skillProgress = pgTable("skill_progress", {
   id: text("id").primaryKey(),
@@ -117,4 +139,10 @@ export const skillProgress = pgTable("skill_progress", {
   recommendedAction: text("recommended_action").default(""),
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
-});
+}, (table) => [
+  index("idx_skill_progress_user_id").on(table.userId),
+  index("idx_skill_progress_skill_id").on(table.skillId),
+  index("idx_skill_progress_user_skill").on(table.userId, table.skillId),
+  index("idx_skill_progress_path_id").on(table.pathId),
+  index("idx_skill_progress_subject_id").on(table.subjectId),
+]);

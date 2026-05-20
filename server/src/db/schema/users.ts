@@ -1,4 +1,4 @@
-import { pgTable, text, integer, boolean, timestamp, varchar, jsonb } from "drizzle-orm/pg-core";
+import { pgTable, text, integer, boolean, timestamp, varchar, jsonb, index } from "drizzle-orm/pg-core";
 
 // ============================================================
 // Users & Authentication
@@ -18,6 +18,11 @@ export const users = pgTable("users", {
   purchasedCourses: text("purchased_courses").array().default([]),
   purchasedPackages: text("purchased_packages").array().default([]),
   isActive: boolean("is_active").default(true),
+  isEmailVerified: boolean("is_email_verified").default(false),
+  emailVerificationToken: text("email_verification_token"),
+  emailVerificationExpiresAt: timestamp("email_verification_expires_at"),
+  passwordResetToken: text("password_reset_token"),
+  passwordResetExpiresAt: timestamp("password_reset_expires_at"),
   schoolId: text("school_id"),
   groupIds: text("group_ids").array().default([]),
   linkedStudentIds: text("linked_student_ids").array().default([]),
@@ -30,4 +35,11 @@ export const users = pgTable("users", {
   reviewLater: text("review_later").array().default([]),
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
-});
+}, (table) => [
+  index("idx_users_role").on(table.role),
+  index("idx_users_is_active").on(table.isActive),
+  index("idx_users_school_id").on(table.schoolId),
+  index("idx_users_subscription_plan").on(table.subscriptionPlan),
+  index("idx_users_email_verification_token").on(table.emailVerificationToken),
+  index("idx_users_password_reset_token").on(table.passwordResetToken),
+]);

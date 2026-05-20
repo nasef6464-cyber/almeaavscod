@@ -470,6 +470,16 @@ contentRouter.get(
   "/homepage-settings",
   optionalAuth,
   asyncHandler(async (_req, res) => {
+    if (USE_PG()) {
+      const rows = await db.select().from(homepageSettings).where(eq(homepageSettings.id, "default")).limit(1);
+      if (rows[0]) return res.json(rows[0]);
+      const [created] = await db.insert(homepageSettings).values({
+        id: "default",
+        settings: defaultHomepageSettings,
+      } as any).returning();
+      return res.json(created);
+    }
+
     let settings = await HomepageSettingsModel.findOne({ key: "default" });
     if (!settings) {
       settings = await HomepageSettingsModel.create(defaultHomepageSettings);
@@ -485,6 +495,18 @@ contentRouter.patch(
   requireRole(["admin"]),
   asyncHandler(async (req, res) => {
     const payload = homepageSettingsSchema.parse(req.body);
+
+    if (USE_PG()) {
+      const existing = await db.select().from(homepageSettings).where(eq(homepageSettings.id, "default")).limit(1);
+      const currentSettings = existing[0]?.settings || defaultHomepageSettings;
+      const merged = { ...currentSettings, ...payload };
+      const [updated] = await db.insert(homepageSettings).values({
+        id: "default",
+        settings: merged,
+      } as any).onConflictDoUpdate({ target: homepageSettings.id, set: { settings: merged } as any }).returning();
+      return res.json(updated);
+    }
+
     const settings = await HomepageSettingsModel.findOneAndUpdate(
       { key: "default" },
       { $set: payload, $setOnInsert: { key: "default" } },
@@ -550,6 +572,28 @@ contentRouter.post(
   asyncHandler(async (req, res) => {
     const payload = studyPlanSchema.parse(req.body);
     const now = Date.now();
+
+    if (USE_PG()) {
+      const [created] = await db.insert(pgStudyPlans).values({
+        id: payload.id,
+        userId: req.authUser!.id,
+        name: payload.name,
+        pathId: payload.pathId,
+        subjectIds: payload.subjectIds || [],
+        courseIds: payload.courseIds || [],
+        startDate: payload.startDate,
+        endDate: payload.endDate,
+        skipCompletedQuizzes: payload.skipCompletedQuizzes,
+        offDays: payload.offDays || [],
+        dailyMinutes: payload.dailyMinutes,
+        preferredStartTime: payload.preferredStartTime || "17:00",
+        status: payload.status || "active",
+        createdAt: payload.createdAt || now,
+        updatedAt: now,
+      } as any).returning();
+      return res.status(StatusCodes.CREATED).json(created);
+    }
+
     const created = await StudyPlanModel.findOneAndUpdate(
       { id: payload.id, userId: req.authUser!.id },
       {
@@ -570,6 +614,18 @@ contentRouter.patch(
   requireAuth,
   asyncHandler(async (req, res) => {
     const payload = studyPlanSchema.partial().parse(req.body);
+
+    if (USE_PG()) {
+      const [updated] = await db.update(pgStudyPlans)
+        .set({ ...payload, userId: req.authUser!.id, updatedAt: Date.now() } as any)
+        .where(and(eq(pgStudyPlans.id, req.params.id), eq(pgStudyPlans.userId, req.authUser!.id)))
+        .returning();
+      if (!updated) {
+        return res.status(StatusCodes.NOT_FOUND).json({ message: "Study plan not found" });
+      }
+      return res.json(updated);
+    }
+
     const updated = await StudyPlanModel.findOneAndUpdate(
       { id: req.params.id, userId: req.authUser!.id },
       {
@@ -592,6 +648,12 @@ contentRouter.delete(
   "/study-plans/:id",
   requireAuth,
   asyncHandler(async (req, res) => {
+    if (USE_PG()) {
+      await db.delete(pgStudyPlans)
+        .where(and(eq(pgStudyPlans.id, req.params.id), eq(pgStudyPlans.userId, req.authUser!.id)));
+      return res.json({ success: true });
+    }
+
     const deleted = await StudyPlanModel.findOneAndDelete({ id: req.params.id, userId: req.authUser!.id });
 
     if (!deleted) {
@@ -608,6 +670,25 @@ contentRouter.post(
   requireRole(["admin", "teacher", "supervisor"]),
   asyncHandler(async (req, res) => {
     const payload = topicSchema.parse(req.body);
+
+    if (USE_PG()) {
+      const id = payload.id || `topic_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`;
+      const [created] = await db.insert(pgTopics).values({
+        id,
+        pathId: payload.pathId,
+        subjectId: payload.subjectId,
+        sectionId: payload.sectionId || null,
+        title: payload.title,
+        parentId: payload.parentId || null,
+        order: payload.order,
+        showOnPlatform: payload.showOnPlatform,
+        isLocked: payload.isLocked,
+        lessonIds: payload.lessonIds || [],
+        quizIds: payload.quizIds || [],
+      } as any).returning();
+      return res.status(StatusCodes.CREATED).json(created);
+    }
+
     const created = await TopicModel.create(payload);
     res.status(StatusCodes.CREATED).json(created);
   }),
@@ -619,6 +700,15 @@ contentRouter.patch(
   requireRole(["admin", "teacher", "supervisor"]),
   asyncHandler(async (req, res) => {
     const payload = topicSchema.partial().parse(req.body);
+
+    if (USE_PG()) {
+      const [updated] = await db.update(pgTopics).set(payload as any).where(eq(pgTopics.id, req.params.id)).returning();
+      if (!updated) {
+        return res.status(StatusCodes.NOT_FOUND).json({ message: "Topic not found" });
+      }
+      return res.json(updated);
+    }
+
     const updated = await TopicModel.findOneAndUpdate(buildDocumentQuery(req.params.id), payload, {
       new: true,
     });
@@ -636,6 +726,11 @@ contentRouter.delete(
   requireAuth,
   requireRole(["admin", "teacher", "supervisor"]),
   asyncHandler(async (req, res) => {
+    if (USE_PG()) {
+      await db.delete(pgTopics).where(eq(pgTopics.id, req.params.id));
+      return res.json({ success: true });
+    }
+
     const deleted = await TopicModel.findOneAndDelete(buildDocumentQuery(req.params.id));
 
     if (!deleted) {
@@ -653,6 +748,39 @@ contentRouter.post(
   asyncHandler(async (req, res) => {
     const payload = lessonSchema.parse(req.body);
     const workflowDefaults = getWorkflowDefaults(req.authUser!);
+
+    if (USE_PG()) {
+      const id = `lesson_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`;
+      const [created] = await db.insert(pgLessons).values({
+        id,
+        title: payload.title,
+        description: payload.description || "",
+        pathId: payload.pathId,
+        subjectId: payload.subjectId,
+        sectionId: payload.sectionId || null,
+        type: payload.type,
+        duration: payload.duration,
+        content: payload.content || "",
+        videoUrl: payload.videoUrl || "",
+        fileUrl: payload.fileUrl || "",
+        meetingUrl: payload.meetingUrl || "",
+        meetingDate: payload.meetingDate || "",
+        recordingUrl: payload.recordingUrl || "",
+        joinInstructions: payload.joinInstructions || "",
+        showRecordingOnPlatform: payload.showRecordingOnPlatform || false,
+        showOnPlatform: payload.showOnPlatform,
+        quizId: payload.quizId || null,
+        order: payload.order,
+        isLocked: payload.isLocked,
+        skillIds: payload.skillIds,
+        ...workflowDefaults,
+        approvalStatus: req.authUser?.role === "admin"
+          ? payload.approvalStatus || workflowDefaults.approvalStatus
+          : workflowDefaults.approvalStatus,
+      } as any).returning();
+      return res.status(StatusCodes.CREATED).json(created);
+    }
+
     const created = await LessonModel.create({
       ...payload,
       ...workflowDefaults,
@@ -671,6 +799,23 @@ contentRouter.patch(
   requireRole(["admin", "teacher", "supervisor"]),
   asyncHandler(async (req, res) => {
     const payload = lessonSchema.partial().parse(req.body);
+
+    if (USE_PG()) {
+      if (req.authUser?.role !== "admin") {
+        const result = await db.select().from(pgLessons).where(eq(pgLessons.id, req.params.id)).limit(1);
+        const existing = result[0];
+        if (!existing || existing.ownerId !== req.authUser?.id) {
+          return res.status(StatusCodes.NOT_FOUND).json({ message: "Lesson not found" });
+        }
+      }
+      const sanitizedPayload = sanitizeWorkflowUpdate(payload as Record<string, unknown>, req.authUser!);
+      const [updated] = await db.update(pgLessons).set(sanitizedPayload as any).where(eq(pgLessons.id, req.params.id)).returning();
+      if (!updated) {
+        return res.status(StatusCodes.NOT_FOUND).json({ message: "Lesson not found" });
+      }
+      return res.json(updated);
+    }
+
     const sanitizedPayload = sanitizeWorkflowUpdate(payload as Record<string, unknown>, req.authUser!);
     const updated = await LessonModel.findOneAndUpdate(buildOwnedDocumentQuery(req.params.id, req.authUser!), sanitizedPayload, {
       new: true,
@@ -689,6 +834,18 @@ contentRouter.delete(
   requireAuth,
   requireRole(["admin", "teacher", "supervisor"]),
   asyncHandler(async (req, res) => {
+    if (USE_PG()) {
+      if (req.authUser?.role !== "admin") {
+        const result = await db.select().from(pgLessons).where(eq(pgLessons.id, req.params.id)).limit(1);
+        const existing = result[0];
+        if (!existing || existing.ownerId !== req.authUser?.id) {
+          return res.status(StatusCodes.NOT_FOUND).json({ message: "Lesson not found" });
+        }
+      }
+      await db.delete(pgLessons).where(eq(pgLessons.id, req.params.id));
+      return res.json({ success: true });
+    }
+
     const deleted = await LessonModel.findOneAndDelete(buildOwnedDocumentQuery(req.params.id, req.authUser!));
 
     if (!deleted) {
@@ -706,6 +863,30 @@ contentRouter.post(
   asyncHandler(async (req, res) => {
     const payload = librarySchema.parse(req.body);
     const workflowDefaults = getWorkflowDefaults(req.authUser!);
+
+    if (USE_PG()) {
+      const id = payload.id || `lib_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`;
+      const [created] = await db.insert(pgLibraryItems).values({
+        id,
+        title: payload.title,
+        size: payload.size || "",
+        downloads: payload.downloads,
+        type: payload.type || "pdf",
+        pathId: payload.pathId,
+        subjectId: payload.subjectId,
+        sectionId: payload.sectionId || null,
+        skillIds: payload.skillIds,
+        url: payload.url || "",
+        showOnPlatform: payload.showOnPlatform,
+        isLocked: payload.isLocked || false,
+        ...workflowDefaults,
+        approvalStatus: req.authUser?.role === "admin"
+          ? payload.approvalStatus || workflowDefaults.approvalStatus
+          : workflowDefaults.approvalStatus,
+      } as any).returning();
+      return res.status(StatusCodes.CREATED).json(created);
+    }
+
     const created = await LibraryItemModel.create({
       ...payload,
       ...workflowDefaults,
@@ -724,6 +905,23 @@ contentRouter.patch(
   requireRole(["admin", "teacher", "supervisor"]),
   asyncHandler(async (req, res) => {
     const payload = librarySchema.partial().parse(req.body);
+
+    if (USE_PG()) {
+      if (req.authUser?.role !== "admin") {
+        const result = await db.select().from(pgLibraryItems).where(eq(pgLibraryItems.id, req.params.id)).limit(1);
+        const existing = result[0];
+        if (!existing || existing.ownerId !== req.authUser?.id) {
+          return res.status(StatusCodes.NOT_FOUND).json({ message: "Library item not found" });
+        }
+      }
+      const sanitizedPayload = sanitizeWorkflowUpdate(payload as Record<string, unknown>, req.authUser!);
+      const [updated] = await db.update(pgLibraryItems).set(sanitizedPayload as any).where(eq(pgLibraryItems.id, req.params.id)).returning();
+      if (!updated) {
+        return res.status(StatusCodes.NOT_FOUND).json({ message: "Library item not found" });
+      }
+      return res.json(updated);
+    }
+
     const sanitizedPayload = sanitizeWorkflowUpdate(payload as Record<string, unknown>, req.authUser!);
     const updated = await LibraryItemModel.findOneAndUpdate(
       buildOwnedDocumentQuery(req.params.id, req.authUser!),
@@ -746,6 +944,18 @@ contentRouter.delete(
   requireAuth,
   requireRole(["admin", "teacher", "supervisor"]),
   asyncHandler(async (req, res) => {
+    if (USE_PG()) {
+      if (req.authUser?.role !== "admin") {
+        const result = await db.select().from(pgLibraryItems).where(eq(pgLibraryItems.id, req.params.id)).limit(1);
+        const existing = result[0];
+        if (!existing || existing.ownerId !== req.authUser?.id) {
+          return res.status(StatusCodes.NOT_FOUND).json({ message: "Library item not found" });
+        }
+      }
+      await db.delete(pgLibraryItems).where(eq(pgLibraryItems.id, req.params.id));
+      return res.json({ success: true });
+    }
+
     const deleted = await LibraryItemModel.findOneAndDelete(buildOwnedDocumentQuery(req.params.id, req.authUser!));
 
     if (!deleted) {
@@ -762,6 +972,25 @@ contentRouter.post(
   requireRole(["admin", "teacher", "supervisor"]),
   asyncHandler(async (req, res) => {
     const payload = groupSchema.parse(req.body);
+
+    if (USE_PG()) {
+      const id = `group_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`;
+      const [created] = await db.insert(pgGroups).values({
+        id,
+        name: payload.name,
+        type: payload.type,
+        parentId: payload.parentId || null,
+        ownerId: payload.ownerId,
+        supervisorIds: payload.supervisorIds || [],
+        studentIds: payload.studentIds || [],
+        courseIds: payload.courseIds || [],
+        description: (payload as any).description || "",
+        location: (payload as any).location || "",
+        settings: (payload as any).settings || {},
+      } as any).returning();
+      return res.status(StatusCodes.CREATED).json(created);
+    }
+
     const created = await GroupModel.create(payload);
     res.status(StatusCodes.CREATED).json(created);
   }),
@@ -773,6 +1002,15 @@ contentRouter.patch(
   requireRole(["admin", "teacher", "supervisor"]),
   asyncHandler(async (req, res) => {
     const payload = groupSchema.partial().parse(req.body);
+
+    if (USE_PG()) {
+      const [updated] = await db.update(pgGroups).set(payload as any).where(eq(pgGroups.id, req.params.id)).returning();
+      if (!updated) {
+        return res.status(StatusCodes.NOT_FOUND).json({ message: "Group not found" });
+      }
+      return res.json(updated);
+    }
+
     const updated = await GroupModel.findOneAndUpdate(buildDocumentQuery(req.params.id), payload, {
       new: true,
     });
@@ -790,6 +1028,11 @@ contentRouter.delete(
   requireAuth,
   requireRole(["admin", "teacher", "supervisor"]),
   asyncHandler(async (req, res) => {
+    if (USE_PG()) {
+      await db.delete(pgGroups).where(eq(pgGroups.id, req.params.id));
+      return res.json({ success: true });
+    }
+
     const deleted = await GroupModel.findOneAndDelete(buildDocumentQuery(req.params.id));
 
     if (!deleted) {
@@ -806,6 +1049,26 @@ contentRouter.post(
   requireRole(["admin", "supervisor"]),
   asyncHandler(async (req, res) => {
     const payload = b2bPackageSchema.parse(req.body);
+
+    if (USE_PG()) {
+      const id = payload.id || `b2b_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`;
+      const [created] = await db.insert(pgB2bPackages).values({
+        id,
+        schoolId: payload.schoolId,
+        name: payload.name,
+        courseIds: payload.courseIds || [],
+        contentTypes: payload.contentTypes || ["all"],
+        pathIds: payload.pathIds || [],
+        subjectIds: payload.subjectIds || [],
+        type: payload.type || "free_access",
+        discountPercentage: payload.discountPercentage || null,
+        maxStudents: payload.maxStudents || 0,
+        status: payload.status || "active",
+        createdAt: payload.createdAt || Date.now(),
+      } as any).returning();
+      return res.status(StatusCodes.CREATED).json(created);
+    }
+
     const created = await B2BPackageModel.create(payload);
     res.status(StatusCodes.CREATED).json(created);
   }),
@@ -817,6 +1080,15 @@ contentRouter.patch(
   requireRole(["admin", "supervisor"]),
   asyncHandler(async (req, res) => {
     const payload = b2bPackageSchema.partial().parse(req.body);
+
+    if (USE_PG()) {
+      const [updated] = await db.update(pgB2bPackages).set(payload as any).where(eq(pgB2bPackages.id, req.params.id)).returning();
+      if (!updated) {
+        return res.status(StatusCodes.NOT_FOUND).json({ message: "Package not found" });
+      }
+      return res.json(updated);
+    }
+
     const updated = await B2BPackageModel.findOneAndUpdate(buildDocumentQuery(req.params.id), payload, {
       new: true,
     });
@@ -834,6 +1106,12 @@ contentRouter.delete(
   requireAuth,
   requireRole(["admin", "supervisor"]),
   asyncHandler(async (req, res) => {
+    if (USE_PG()) {
+      await db.delete(pgAccessCodes).where(eq(pgAccessCodes.packageId, req.params.id));
+      await db.delete(pgB2bPackages).where(eq(pgB2bPackages.id, req.params.id));
+      return res.json({ success: true });
+    }
+
     const deleted = await B2BPackageModel.findOneAndDelete(buildDocumentQuery(req.params.id));
 
     if (!deleted) {
@@ -851,6 +1129,22 @@ contentRouter.post(
   requireRole(["admin", "supervisor"]),
   asyncHandler(async (req, res) => {
     const payload = accessCodeSchema.parse(req.body);
+
+    if (USE_PG()) {
+      const id = payload.id || `ac_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`;
+      const [created] = await db.insert(pgAccessCodes).values({
+        id,
+        code: payload.code,
+        schoolId: payload.schoolId,
+        packageId: payload.packageId,
+        maxUses: payload.maxUses,
+        currentUses: payload.currentUses || 0,
+        expiresAt: payload.expiresAt,
+        createdAt: payload.createdAt || Date.now(),
+      } as any).returning();
+      return res.status(StatusCodes.CREATED).json(created);
+    }
+
     const created = await AccessCodeModel.create(payload);
     res.status(StatusCodes.CREATED).json(created);
   }),
@@ -862,6 +1156,15 @@ contentRouter.patch(
   requireRole(["admin", "supervisor"]),
   asyncHandler(async (req, res) => {
     const payload = accessCodeSchema.partial().parse(req.body);
+
+    if (USE_PG()) {
+      const [updated] = await db.update(pgAccessCodes).set(payload as any).where(eq(pgAccessCodes.id, req.params.id)).returning();
+      if (!updated) {
+        return res.status(StatusCodes.NOT_FOUND).json({ message: "Access code not found" });
+      }
+      return res.json(updated);
+    }
+
     const updated = await AccessCodeModel.findOneAndUpdate(buildDocumentQuery(req.params.id), payload, {
       new: true,
     });
@@ -879,6 +1182,11 @@ contentRouter.delete(
   requireAuth,
   requireRole(["admin", "supervisor"]),
   asyncHandler(async (req, res) => {
+    if (USE_PG()) {
+      await db.delete(pgAccessCodes).where(eq(pgAccessCodes.id, req.params.id));
+      return res.json({ success: true });
+    }
+
     const deleted = await AccessCodeModel.findOneAndDelete(buildDocumentQuery(req.params.id));
 
     if (!deleted) {

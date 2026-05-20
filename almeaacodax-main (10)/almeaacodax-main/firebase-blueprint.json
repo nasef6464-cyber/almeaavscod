@@ -1,0 +1,192 @@
+{
+  "entities": {
+    "User": {
+      "title": "User",
+      "description": "User profile and settings",
+      "type": "object",
+      "properties": {
+        "name": { "type": "string" },
+        "email": { "type": "string", "format": "email" },
+        "avatar": { "type": "string" },
+        "role": { "type": "string", "enum": ["student", "teacher", "admin", "supervisor", "parent"] },
+        "points": { "type": "number" },
+        "badges": { "type": "array", "items": { "type": "string" } },
+        "subscription": {
+          "type": "object",
+          "properties": {
+            "plan": { "type": "string", "enum": ["free", "premium"] },
+            "expiresAt": { "type": "string" },
+            "purchasedCourses": { "type": "array", "items": { "type": "string" } },
+            "purchasedPackages": { "type": "array", "items": { "type": "string" } }
+          }
+        },
+        "isActive": { "type": "boolean" },
+        "schoolId": { "type": "string" },
+        "groupIds": { "type": "array", "items": { "type": "string" } },
+        "enrolledCourses": { "type": "array", "items": { "type": "string" } },
+        "enrolledPaths": { "type": "array", "items": { "type": "string" } },
+        "completedLessons": { "type": "array", "items": { "type": "string" } },
+        "favorites": { "type": "array", "items": { "type": "string" } },
+        "reviewLater": { "type": "array", "items": { "type": "string" } }
+      },
+      "required": ["name", "role", "points", "badges", "subscription"]
+    },
+    "Course": {
+      "title": "Course",
+      "description": "Course information",
+      "type": "object",
+      "properties": {
+        "title": { "type": "string" },
+        "thumbnail": { "type": "string" },
+        "instructor": { "type": "string" },
+        "price": { "type": "number" },
+        "currency": { "type": "string" },
+        "duration": { "type": "number" },
+        "level": { "type": "string", "enum": ["Beginner", "Intermediate", "Advanced"] },
+        "rating": { "type": "number" },
+        "category": { "type": "string" },
+        "subject": { "type": "string" },
+        "features": { "type": "array", "items": { "type": "string" } },
+        "description": { "type": "string" },
+        "instructorBio": { "type": "string" },
+        "isPublished": { "type": "boolean" },
+        "prerequisiteCourseIds": { "type": "array", "items": { "type": "string" } },
+        "dripContentEnabled": { "type": "boolean" },
+        "certificateEnabled": { "type": "boolean" },
+        "modules": { "type": "array" }
+      },
+      "required": ["title", "thumbnail", "instructor", "price", "currency", "duration", "level", "rating", "category", "features"]
+    },
+    "Question": {
+      "title": "Question",
+      "description": "Question bank item",
+      "type": "object",
+      "properties": {
+        "text": { "type": "string" },
+        "options": { "type": "array", "items": { "type": "string" } },
+        "correctOptionIndex": { "type": "number" },
+        "explanation": { "type": "string" },
+        "videoUrl": { "type": "string" },
+        "imageUrl": { "type": "string" },
+        "skillId": { "type": "string" },
+        "subject": { "type": "string" },
+        "difficulty": { "type": "string", "enum": ["Easy", "Medium", "Hard"] },
+        "type": { "type": "string", "enum": ["mcq", "true_false", "essay"] }
+      },
+      "required": ["text", "options", "correctOptionIndex", "subject", "difficulty", "type"]
+    },
+    "Quiz": {
+      "title": "Quiz",
+      "description": "Quiz configuration",
+      "type": "object",
+      "properties": {
+        "title": { "type": "string" },
+        "description": { "type": "string" },
+        "pathId": { "type": "string" },
+        "subjectId": { "type": "string" },
+        "settings": { "type": "object" },
+        "access": { "type": "object" },
+        "questionIds": { "type": "array", "items": { "type": "string" } },
+        "createdAt": { "type": "number" },
+        "isPublished": { "type": "boolean" }
+      },
+      "required": ["title", "pathId", "subjectId", "settings", "access", "questionIds", "createdAt", "isPublished"]
+    },
+    "QuizResult": {
+      "title": "QuizResult",
+      "description": "User's quiz result",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "quizId": { "type": "string" },
+        "quizTitle": { "type": "string" },
+        "score": { "type": "number" },
+        "totalQuestions": { "type": "number" },
+        "correctAnswers": { "type": "number" },
+        "wrongAnswers": { "type": "number" },
+        "unanswered": { "type": "number" },
+        "timeSpent": { "type": "string" },
+        "date": { "type": "string" },
+        "skillsAnalysis": { "type": "array" }
+      },
+      "required": ["userId", "quizId", "quizTitle", "score", "totalQuestions", "correctAnswers", "wrongAnswers", "unanswered", "timeSpent", "date", "skillsAnalysis"]
+    },
+    "QuestionAttempt": {
+      "title": "QuestionAttempt",
+      "description": "User's question attempt",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "questionId": { "type": "string" },
+        "selectedOptionIndex": { "type": "number" },
+        "isCorrect": { "type": "boolean" },
+        "timeSpentSeconds": { "type": "number" },
+        "date": { "type": "string" }
+      },
+      "required": ["userId", "questionId", "selectedOptionIndex", "isCorrect", "timeSpentSeconds", "date"]
+    },
+    "Activity": {
+      "title": "Activity",
+      "description": "User activity log",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "type": { "type": "string" },
+        "title": { "type": "string" },
+        "date": { "type": "string" },
+        "link": { "type": "string" }
+      },
+      "required": ["userId", "type", "title", "date"]
+    },
+    "Group": {
+      "title": "Group",
+      "description": "Group or class",
+      "type": "object",
+      "properties": {
+        "name": { "type": "string" },
+        "type": { "type": "string" },
+        "parentId": { "type": "string" },
+        "ownerId": { "type": "string" },
+        "supervisorIds": { "type": "array", "items": { "type": "string" } },
+        "studentIds": { "type": "array", "items": { "type": "string" } },
+        "courseIds": { "type": "array", "items": { "type": "string" } },
+        "createdAt": { "type": "number" }
+      },
+      "required": ["name", "type", "ownerId", "supervisorIds", "studentIds", "courseIds", "createdAt"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": { "$ref": "#/entities/User" },
+      "description": "User profiles"
+    },
+    "/courses/{courseId}": {
+      "schema": { "$ref": "#/entities/Course" },
+      "description": "Courses"
+    },
+    "/questions/{questionId}": {
+      "schema": { "$ref": "#/entities/Question" },
+      "description": "Question bank"
+    },
+    "/quizzes/{quizId}": {
+      "schema": { "$ref": "#/entities/Quiz" },
+      "description": "Quizzes"
+    },
+    "/quizResults/{resultId}": {
+      "schema": { "$ref": "#/entities/QuizResult" },
+      "description": "Quiz results"
+    },
+    "/questionAttempts/{attemptId}": {
+      "schema": { "$ref": "#/entities/QuestionAttempt" },
+      "description": "Question attempts"
+    },
+    "/activities/{activityId}": {
+      "schema": { "$ref": "#/entities/Activity" },
+      "description": "User activities"
+    },
+    "/groups/{groupId}": {
+      "schema": { "$ref": "#/entities/Group" },
+      "description": "Groups and classes"
+    }
+  }
+}

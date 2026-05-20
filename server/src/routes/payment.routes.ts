@@ -1,12 +1,18 @@
 ﻿import { Router } from "express";
 import { StatusCodes } from "http-status-codes";
+import { eq, and, or, desc } from "drizzle-orm";
 import { z } from "zod";
 import { asyncHandler } from "../utils/asyncHandler.js";
 import { optionalAuth, requireAuth, requireRole } from "../middleware/auth.js";
+import { db } from "../db/connection.js";
+import { paymentRequests as pgPaymentRequests, paymentSettings as pgPaymentSettings, users } from "../db/schema/index.js";
 import { PaymentRequestModel } from "../models/PaymentRequest.js";
 import { PaymentSettingsModel } from "../models/PaymentSettings.js";
 import { UserModel } from "../models/User.js";
 import { applyPurchaseToUser } from "../services/applyPurchaseToUser.js";
+import { env } from "../config/env.js";
+
+const USE_PG = () => env.USE_POSTGRES && env.DATABASE_URL;
 
 const paymentMethodSettingsSchema = z.object({
   enabled: z.boolean().optional(),
@@ -124,6 +130,16 @@ paymentRouter.get(
   "/settings",
   optionalAuth,
   asyncHandler(async (req, res) => {
+    if (USE_PG()) {
+      const rows = await db.select().from(pgPaymentSettings).where(eq(pgPaymentSettings.id, "default")).limit(1);
+      let settings = rows[0];
+      if (!settings) {
+        [settings] = await db.insert(pgPaymentSettings).values({ id: "default" } as any).returning();
+      }
+      if (req.authUser?.role === "admin") return res.json(settings);
+      return res.json(sanitizeSettingsForPublic(settings));
+    }
+
     const settings = await getOrCreateSettings();
 
     if (req.authUser?.role === "admin") {
@@ -140,6 +156,15 @@ paymentRouter.patch(
   requireRole(["admin"]),
   asyncHandler(async (req, res) => {
     const payload = paymentSettingsUpdateSchema.parse(req.body);
+
+    if (USE_PG()) {
+      const [updated] = await db.update(pgPaymentSettings)
+        .set(payload as any)
+        .where(eq(pgPaymentSettings.id, "default"))
+        .returning();
+      return res.json(updated);
+    }
+
     const settings = await getOrCreateSettings();
     Object.assign(settings, payload);
     await settings.save();
@@ -151,6 +176,16 @@ paymentRouter.get(
   "/requests",
   requireAuth,
   asyncHandler(async (req, res) => {
+    if (USE_PG()) {
+      const filter = req.authUser?.role === "admin"
+        ? undefined
+        : eq(pgPaymentRequests.userId, req.authUser!.id);
+      const rows = await db.select().from(pgPaymentRequests)
+        .where(filter || undefined)
+        .orderBy(desc(pgPaymentRequests.createdAt));
+      return res.json({ requests: rows });
+    }
+
     const filter = req.authUser?.role === "admin" ? {} : { userId: req.authUser?.id };
     const requests = await PaymentRequestModel.find(filter).sort({ createdAt: -1 });
     return res.json({ requests });
@@ -162,6 +197,57 @@ paymentRouter.post(
   requireAuth,
   asyncHandler(async (req, res) => {
     const payload = paymentRequestCreateSchema.parse(req.body);
+
+    if (USE_PG()) {
+      const settings = await db.select().from(pgPaymentSettings).where(eq(pgPaymentSettings.id, "default")).limit(1);
+      if (!isPaymentMethodEnabled(settings[0], payload.paymentMethod)) {
+        return res.status(StatusCodes.BAD_REQUEST).json({ message: "Payment method is not available now" });
+      }
+
+      const userResult = await db.select().from(users).where(eq(users.id, req.authUser!.id)).limit(1);
+      const user = userResult[0];
+      if (!user) {
+        return res.status(StatusCodes.NOT_FOUND).json({ message: "User not found" });
+      }
+
+      const pendingDuplicate = await db.select().from(pgPaymentRequests)
+        .where(and(
+          eq(pgPaymentRequests.userId, user.id),
+          eq(pgPaymentRequests.itemType, payload.itemType),
+          eq(pgPaymentRequests.itemId, payload.itemId),
+          eq(pgPaymentRequests.status, "pending"),
+        )).limit(1);
+
+      if (pendingDuplicate[0]) {
+        return res.status(StatusCodes.CONFLICT).json({
+          message: "There is already a pending payment request for this item",
+          request: pendingDuplicate[0],
+        });
+      }
+
+      const [created] = await db.insert(pgPaymentRequests).values({
+        id: `payreq_${Date.now()}`,
+        userId: user.id,
+        userName: user.name,
+        userEmail: user.email,
+        itemType: payload.itemType,
+        itemId: payload.itemId,
+        itemName: payload.itemName,
+        packageId: payload.packageId || "",
+        includedCourseIds: payload.includedCourseIds || [],
+        amount: payload.amount,
+        currency: payload.currency,
+        paymentMethod: payload.paymentMethod,
+        transferReference: payload.transferReference || "",
+        walletNumber: payload.walletNumber || "",
+        receiptUrl: payload.receiptUrl || "",
+        notes: payload.notes || "",
+        status: "pending",
+      } as any).returning();
+
+      return res.status(StatusCodes.CREATED).json({ request: created });
+    }
+
     const settings = await getOrCreateSettings();
     const user = await UserModel.findById(req.authUser?.id);
 
@@ -208,6 +294,36 @@ paymentRouter.patch(
   requireRole(["admin"]),
   asyncHandler(async (req, res) => {
     const payload = paymentRequestReviewSchema.parse(req.body);
+
+    if (USE_PG()) {
+      const [existing] = await db.select().from(pgPaymentRequests)
+        .where(eq(pgPaymentRequests.id, req.params.id)).limit(1);
+      if (!existing) {
+        return res.status(StatusCodes.NOT_FOUND).json({ message: "Payment request not found" });
+      }
+
+      const [updated] = await db.update(pgPaymentRequests)
+        .set({
+          status: payload.status,
+          reviewerNotes: payload.reviewerNotes || "",
+          reviewedBy: req.authUser?.id || "",
+          reviewedAt: Date.now(),
+        } as any)
+        .where(eq(pgPaymentRequests.id, req.params.id))
+        .returning();
+
+      let updatedUser = null;
+      if (payload.status === "approved") {
+        updatedUser = await applyPurchaseToUser(existing.userId, {
+          courseId: existing.itemType === "course" ? existing.itemId : undefined,
+          packageId: existing.packageId || (existing.itemType === "package" ? existing.itemId : undefined),
+          includedCourseIds: Array.isArray(existing.includedCourseIds) ? existing.includedCourseIds : [],
+        });
+      }
+
+      return res.json({ request: updated, user: updatedUser });
+    }
+
     const requestDoc = await PaymentRequestModel.findOne({
       $or: [{ id: req.params.id }, { _id: req.params.id }],
     });

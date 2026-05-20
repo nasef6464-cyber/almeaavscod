@@ -17,6 +17,11 @@ const userSchema = new Schema(
       purchasedPackages: { type: [String], default: [] },
     },
     isActive: { type: Boolean, default: true },
+    isEmailVerified: { type: Boolean, default: false },
+    emailVerificationToken: { type: String },
+    emailVerificationExpiresAt: { type: Date },
+    passwordResetToken: { type: String },
+    passwordResetExpiresAt: { type: Date },
     schoolId: { type: String, default: null },
     groupIds: { type: [String], default: [] },
     linkedStudentIds: { type: [String], default: [] },
@@ -32,6 +37,12 @@ const userSchema = new Schema(
     timestamps: true,
   },
 );
+
+userSchema.index({ emailVerificationToken: 1 }, { sparse: true });
+userSchema.index({ passwordResetToken: 1 }, { sparse: true });
+userSchema.index({ role: 1 });
+userSchema.index({ isActive: 1 });
+userSchema.index({ schoolId: 1 });
 
 userSchema.set("toJSON", {
   transform: (_doc, ret) => {

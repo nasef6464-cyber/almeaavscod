@@ -1,0 +1,10 @@
+{
+  "name": "منصة المئة",
+  "short_name": "المئة",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#f9fafb",
+  "theme_color": "#10b981",
+  "icons": []
+}
+

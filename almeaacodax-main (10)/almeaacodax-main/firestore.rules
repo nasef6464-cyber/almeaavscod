@@ -1,0 +1,165 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ===============================================================
+    // Helper Functions
+    // ===============================================================
+    
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return isAuthenticated() && request.auth.uid == userId;
+    }
+
+    function getUserData() {
+      return exists(/databases/$(database)/documents/users/$(request.auth.uid))
+        ? get(/databases/$(database)/documents/users/$(request.auth.uid)).data
+        : null;
+    }
+
+    function isAdmin() {
+      return isAuthenticated() && (
+        (request.auth.token.email == "nasef64@gmail.com") ||
+        (request.auth.token.email == "Nasef64@gmail.com") ||
+        (getUserData() != null && getUserData().role == 'admin')
+      );
+    }
+
+    function isTeacher() {
+      return isAuthenticated() && (
+        (getUserData() != null && (getUserData().role == 'teacher' || getUserData().role == 'supervisor')) ||
+        isAdmin()
+      );
+    }
+
+    // ===============================================================
+    // Rules
+    // ===============================================================
+
+    match /test/{testId} {
+      allow read, write: if true;
+    }
+
+    match /users/{userId} {
+      // Users can read their own profile, admins can read all
+      allow read: if isOwner(userId) || isAdmin();
+      // Users can create their own profile, but cannot set themselves as admin unless they already are
+      allow create: if isOwner(userId) && (request.resource.data.role == 'student' || isAdmin());
+      // Users can update their own profile, but cannot change their role
+      allow update: if isOwner(userId) && (request.resource.data.role == resource.data.role || isAdmin());
+      allow delete: if isAdmin();
+    }
+
+    match /courses/{courseId} {
+      // Anyone authenticated can read published courses, admins/teachers can read all
+      allow read: if isAuthenticated() && (resource.data.isPublished == true || isTeacher());
+      // Only admins and teachers can create/update/delete courses
+      allow create, update, delete: if isTeacher();
+    }
+
+    match /questions/{questionId} {
+      // Students can read questions (e.g., during a quiz)
+      allow read: if isAuthenticated();
+      allow create, update, delete: if isTeacher();
+    }
+
+    match /quizzes/{quizId} {
+      allow read: if true;
+      allow create, update, delete: if isTeacher();
+    }
+
+    match /topics/{topicId} {
+      allow read: if true;
+      allow create, update, delete: if isTeacher();
+    }
+
+    match /lessons/{lessonId} {
+      allow read: if true;
+      allow create, update, delete: if isTeacher();
+    }
+
+    match /paths/{pathId} {
+      allow read: if true;
+      allow create, update, delete: if isTeacher();
+    }
+
+    match /levels/{levelId} {
+      allow read: if true;
+      allow create, update, delete: if isTeacher();
+    }
+
+    match /subjects/{subjectId} {
+      allow read: if true;
+      allow create, update, delete: if isTeacher();
+    }
+
+    match /sections/{sectionId} {
+      allow read: if true;
+      allow create, update, delete: if isTeacher();
+    }
+
+    match /nestedSkills/{skillId} {
+      allow read: if true;
+      allow create, update, delete: if isTeacher();
+    }
+
+    match /libraryItems/{itemId} {
+      allow read: if true;
+      allow create, update, delete: if isTeacher();
+    }
+
+    match /b2bPackages/{packageId} {
+      allow read: if true;
+      allow create, update, delete: if isTeacher();
+    }
+    
+    match /accessCodes/{codeId} {
+      allow read: if isAuthenticated();
+      allow create, update, delete: if isTeacher();
+    }
+
+    match /skills/{skillId} {
+      allow read: if true;
+      allow create, update, delete: if isTeacher();
+    }
+
+    match /quizResults/{resultId} {
+      // Users can only read their own results
+      allow read: if isAuthenticated() && (resource.data.userId == request.auth.uid || isTeacher());
+      // Users can create their own results
+      allow create: if isAuthenticated() && request.resource.data.userId == request.auth.uid;
+      // Results shouldn't be updated or deleted by students
+      allow update, delete: if isAdmin();
+    }
+
+    match /questionAttempts/{attemptId} {
+      allow read: if isAuthenticated() && (resource.data.userId == request.auth.uid || isTeacher());
+      allow create: if isAuthenticated() && request.resource.data.userId == request.auth.uid;
+      allow update, delete: if isAdmin();
+    }
+
+    match /activities/{activityId} {
+      allow read: if isAuthenticated() && (resource.data.userId == request.auth.uid || isAdmin());
+      allow create: if isAuthenticated() && request.resource.data.userId == request.auth.uid;
+      allow update, delete: if isAdmin();
+    }
+
+    match /groups/{groupId} {
+      // Group members or admins/teachers can read
+      allow read: if isAuthenticated() && (
+        request.auth.uid in resource.data.studentIds || 
+        request.auth.uid in resource.data.supervisorIds || 
+        resource.data.ownerId == request.auth.uid ||
+        isTeacher()
+      );
+      // Teachers/Admins can create groups
+      allow create: if isTeacher() && request.resource.data.ownerId == request.auth.uid;
+      // Owners and admins can update/delete
+      allow update, delete: if isAuthenticated() && (resource.data.ownerId == request.auth.uid || isAdmin());
+    }
+  }
+}

@@ -1,4 +1,4 @@
-import { pgTable, text, integer, varchar, timestamp, boolean } from "drizzle-orm/pg-core";
+import { pgTable, text, integer, varchar, timestamp, boolean, index } from "drizzle-orm/pg-core";
 
 // ============================================================
 // Commerce: B2B Packages, Access Codes, Payments, Study Plans
@@ -18,7 +18,10 @@ export const b2bPackages = pgTable("b2b_packages", {
   status: varchar("status", { length: 20 }).default("active"),
   createdAt: integer("created_at").default(0),
   updatedAt: timestamp("updated_at").defaultNow(),
-});
+}, (table) => [
+  index("idx_b2b_packages_school_id").on(table.schoolId),
+  index("idx_b2b_packages_status").on(table.status),
+]);
 
 export const accessCodes = pgTable("access_codes", {
   id: text("id").primaryKey(),
@@ -30,7 +33,11 @@ export const accessCodes = pgTable("access_codes", {
   expiresAt: integer("expires_at").notNull(),
   createdAt: integer("created_at").default(0),
   updatedAt: timestamp("updated_at").defaultNow(),
-});
+}, (table) => [
+  index("idx_access_codes_code").on(table.code),
+  index("idx_access_codes_school_id").on(table.schoolId),
+  index("idx_access_codes_package_id").on(table.packageId),
+]);
 
 export const paymentRequests = pgTable("payment_requests", {
   id: text("id").primaryKey(),
@@ -55,7 +62,12 @@ export const paymentRequests = pgTable("payment_requests", {
   reviewerNotes: text("reviewer_notes").default(""),
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
-});
+}, (table) => [
+  index("idx_payment_requests_user_id").on(table.userId),
+  index("idx_payment_requests_status").on(table.status),
+  index("idx_payment_requests_item_type").on(table.itemType),
+  index("idx_payment_requests_created_at").on(table.createdAt),
+]);
 
 export const paymentSettings = pgTable("payment_settings", {
   id: text("id").primaryKey(),
@@ -87,4 +99,7 @@ export const studyPlans = pgTable("study_plans", {
   status: varchar("status", { length: 20 }).default("active"),
   createdAt: integer("created_at").default(0),
   updatedAt: integer("updated_at").default(0),
-});
+}, (table) => [
+  index("idx_study_plans_user_id").on(table.userId),
+  index("idx_study_plans_status").on(table.status),
+]);

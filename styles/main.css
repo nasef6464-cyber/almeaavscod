@@ -1,0 +1,58 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+html,
+body,
+#root {
+  --platform-font-body: "Tajawal";
+  --platform-font-heading: "Tajawal";
+  font-family: var(--platform-font-body), "Tajawal", sans-serif;
+}
+
+h1,
+h2,
+h3,
+.platform-heading-font {
+  font-family: var(--platform-font-heading), var(--platform-font-body), "Tajawal", sans-serif;
+}
+
+body {
+  background-color: #f9fafb;
+}
+
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+
+.no-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+@keyframes cta-soft-pulse {
+  0%,
+  100% {
+    transform: translateY(0);
+    box-shadow: 0 8px 18px rgba(79, 70, 229, 0.12);
+  }
+
+  50% {
+    transform: translateY(-1px);
+    box-shadow: 0 14px 28px rgba(79, 70, 229, 0.18);
+  }
+}
+
+.cta-attention {
+  animation: cta-soft-pulse 2.8s ease-in-out infinite;
+}
+
+.cta-attention:hover {
+  animation-play-state: paused;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .cta-attention {
+    animation: none;
+  }
+}

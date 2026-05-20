@@ -4,3 +4,8 @@ export { courses, lessons, topics } from "./courses.js";
 export { questions, quizzes, quizResults, questionAttempts, skillProgress } from "./quizzes.js";
 export { b2bPackages, accessCodes, paymentRequests, paymentSettings, studyPlans } from "./commerce.js";
 export { groups, libraryItems, homepageSettings, activities } from "./system.js";
+export { certificates } from "./certificates.js";
+export { notificationTemplates, notificationDeliveries } from "./notifications.js";
+export { adminAuditLogs, aiInteractions, clientEvents } from "./monitoring.js";
+export { discountCodes, accessGrants, announcementAds, platformIntegrationSettings } from "./commerceExtensions.js";
+export { backupSnapshots, backupActivities } from "./backups.js";

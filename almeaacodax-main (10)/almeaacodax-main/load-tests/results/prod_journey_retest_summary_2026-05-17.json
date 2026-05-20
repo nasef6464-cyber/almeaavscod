@@ -1,0 +1,61 @@
+[
+  {
+    "file": "prod_journey_auth_login_c1000_2026-05-17.jsonl",
+    "concurrency": 1000,
+    "rps": 66,
+    "p99": 8584,
+    "errors": 0,
+    "timeouts": 0,
+    "non2xx": 330,
+    "status": {
+      "429": {
+        "count": 330
+      }
+    }
+  },
+  {
+    "file": "prod_journey_auth_login_c500_2026-05-17.jsonl",
+    "concurrency": 500,
+    "rps": 44.5,
+    "p99": 7317,
+    "errors": 0,
+    "timeouts": 0,
+    "non2xx": 267,
+    "status": {
+      "401": {
+        "count": 76
+      },
+      "429": {
+        "count": 191
+      }
+    }
+  },
+  {
+    "file": "prod_journey_quizzes_results_unauth_c1000_2026-05-17.jsonl",
+    "concurrency": 1000,
+    "rps": 84.8,
+    "p99": 6980,
+    "errors": 0,
+    "timeouts": 0,
+    "non2xx": 424,
+    "status": {
+      "401": {
+        "count": 424
+      }
+    }
+  },
+  {
+    "file": "prod_journey_quizzes_results_unauth_c500_2026-05-17.jsonl",
+    "concurrency": 500,
+    "rps": 143.2,
+    "p99": 6728,
+    "errors": 0,
+    "timeouts": 0,
+    "non2xx": 716,
+    "status": {
+      "401": {
+        "count": 716
+      }
+    }
+  }
+]

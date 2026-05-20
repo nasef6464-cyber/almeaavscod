@@ -1,10 +1,10 @@
 import { Router } from "express";
 import { StatusCodes } from "http-status-codes";
 import mongoose from "mongoose";
-import { eq, and, or, ne, desc, isNull } from "drizzle-orm";
+import { eq, and, or, ne, desc, isNull, inArray } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "../db/connection.js";
-import { questions as pgQuestions, quizzes as pgQuizzes, quizResults as pgQuizResults } from "../db/schema/index.js";
+import { questions as pgQuestions, quizzes as pgQuizzes, quizResults as pgQuizResults, skillProgress as pgSkillProgress, skills as pgSkills, users as pgUsers, questionAttempts as pgQuestionAttempts } from "../db/schema/index.js";
 import { QuizModel } from "../models/Quiz.js";
 import { QuestionModel } from "../models/Question.js";
 import { QuizResultModel } from "../models/QuizResult.js";
@@ -147,6 +147,12 @@ const buildDocumentsByIdsQuery = (values: string[]) => {
 const resolveQuizSkillIds = async (questionIds: string[]) => {
   if (questionIds.length === 0) {
     return [];
+  }
+
+  if (USE_PG()) {
+    const rows = await db.select({ skillIds: pgQuestions.skillIds }).from(pgQuestions)
+      .where(inArray(pgQuestions.id, questionIds));
+    return [...new Set(rows.flatMap((r) => r.skillIds || []).filter(Boolean))];
   }
 
   const questions = await QuestionModel.find({ id: { $in: questionIds } }).select("skillIds");
@@ -397,24 +403,33 @@ const canSubmitQuiz = async (quiz: any, user: any) => {
     return false;
   }
 
-  const accessType = quiz.access?.type || "free";
+  const accessType = USE_PG() ? (quiz as any).accessType || "free" : quiz.access?.type || "free";
+
   if (accessType === "free") {
     return true;
   }
 
-  if (user.subscription?.plan === "premium") {
+  const isPremium = USE_PG()
+    ? (user as any).subscriptionPlan === "premium"
+    : user.subscription?.plan === "premium";
+
+  if (isPremium) {
     return true;
   }
 
   if (accessType === "private") {
-    const allowedGroupIds = new Set((quiz.access?.allowedGroupIds || []).map(String));
+    const allowedGroupIds = USE_PG()
+      ? new Set((quiz.accessAllowedGroupIds || []).map(String))
+      : new Set((quiz.access?.allowedGroupIds || []).map(String));
     const matchesAllowedGroup =
       allowedGroupIds.size === 0 || userGroupIds.some((groupId: string) => allowedGroupIds.has(groupId));
     return hasExplicitTarget || matchesAllowedGroup;
   }
 
   const subjectId = String(quiz.subjectId || "");
-  const purchasedPackageIds = (user.subscription?.purchasedPackages || []).map(String);
+  const purchasedPackageIds = USE_PG()
+    ? (user.purchasedPackages || []).map(String)
+    : (user.subscription?.purchasedPackages || []).map(String);
 
   if (accessType === "course_only") {
     return (
@@ -432,6 +447,54 @@ const canSubmitQuiz = async (quiz: any, user: any) => {
 const updateSkillProgressFromResult = async (result: any, userId: string) => {
   const skillsAnalysis = Array.isArray(result.skillsAnalysis) ? result.skillsAnalysis : [];
   if (skillsAnalysis.length === 0) return;
+
+  if (USE_PG()) {
+    await Promise.all(
+      skillsAnalysis
+        .filter((skill: any) => skill?.skillId || skill?.skill)
+        .map(async (skill: any) => {
+          const skillId = String(skill.skillId || `${skill.subjectId || "subject"}:${skill.sectionId || "section"}:${skill.skill}`);
+          const mastery = Math.max(0, Math.min(100, Number(skill.mastery || 0)));
+
+          const existing = await db.select().from(pgSkillProgress)
+            .where(and(eq(pgSkillProgress.userId, userId), eq(pgSkillProgress.skillId, skillId)))
+            .limit(1);
+
+          const previousAttempts = Number(existing[0]?.attempts || 0);
+          const nextAttempts = previousAttempts + 1;
+          const previousMastery = Number(existing[0]?.mastery || 0);
+          const nextMastery = Math.round(((previousMastery * previousAttempts) + mastery) / nextAttempts);
+          const nextStatus = buildSkillStatus(nextMastery);
+
+          const values = {
+            userId,
+            skillId,
+            skill: String(skill.skill || existing[0]?.skill || "مهارة غير مسماة"),
+            pathId: String(skill.pathId || existing[0]?.pathId || ""),
+            subjectId: String(skill.subjectId || existing[0]?.subjectId || ""),
+            sectionId: String(skill.sectionId || existing[0]?.sectionId || ""),
+            mastery: nextMastery,
+            status: nextStatus,
+            attempts: nextAttempts,
+            lastQuizId: String(result.quizId || ""),
+            lastQuizTitle: String(result.quizTitle || ""),
+            lastAttemptAt: new Date(),
+            recommendedAction: buildRecommendedAction(nextMastery, nextAttempts),
+          };
+
+          if (existing[0]) {
+            await db.update(pgSkillProgress).set(values as any)
+              .where(eq(pgSkillProgress.id, existing[0].id));
+          } else {
+            await db.insert(pgSkillProgress).values({
+              id: `sp_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`,
+              ...values,
+            } as any);
+          }
+        }),
+    );
+    return;
+  }
 
   await Promise.all(
     skillsAnalysis
@@ -473,11 +536,57 @@ const updateSkillProgressFromQuestionAttempt = async (attempt: any, userId: stri
   const skillIds = uniqueStrings(Array.isArray(attempt.skillIds) ? attempt.skillIds.map(String) : []);
   if (skillIds.length === 0) return;
 
-  const skills = await SkillModel.find(buildDocumentsByIdsQuery(skillIds));
+  const skills = await (USE_PG()
+    ? db.select().from(pgSkills).where(inArray(pgSkills.id, skillIds))
+    : SkillModel.find(buildDocumentsByIdsQuery(skillIds))
+  );
   const mastery = attempt.isCorrect ? 100 : 0;
 
+  if (USE_PG()) {
+    await Promise.all(
+      (skills as any[]).map(async (skill) => {
+        const skillId = String(skill.id);
+        const existing = await db.select().from(pgSkillProgress)
+          .where(and(eq(pgSkillProgress.userId, userId), eq(pgSkillProgress.skillId, skillId)))
+          .limit(1);
+        const previousAttempts = Number(existing[0]?.attempts || 0);
+        const nextAttempts = previousAttempts + 1;
+        const previousMastery = Number(existing[0]?.mastery || 0);
+        const nextMastery = Math.round(((previousMastery * previousAttempts) + mastery) / nextAttempts);
+        const nextStatus = buildSkillStatus(nextMastery);
+
+        const values = {
+          userId,
+          skillId,
+          skill: String(skill.name || existing[0]?.skill || "مهارة غير مسماة"),
+          pathId: String(skill.pathId || existing[0]?.pathId || attempt.pathId || ""),
+          subjectId: String(skill.subjectId || existing[0]?.subjectId || attempt.subjectId || ""),
+          sectionId: String(skill.sectionId || existing[0]?.sectionId || attempt.sectionId || ""),
+          mastery: nextMastery,
+          status: nextStatus,
+          attempts: nextAttempts,
+          lastQuizId: String(existing[0]?.lastQuizId || ""),
+          lastQuizTitle: String(existing[0]?.lastQuizTitle || ""),
+          lastAttemptAt: new Date(),
+          recommendedAction: buildRecommendedAction(nextMastery, nextAttempts),
+        };
+
+        if (existing[0]) {
+          await db.update(pgSkillProgress).set(values as any)
+            .where(eq(pgSkillProgress.id, existing[0].id));
+        } else {
+          await db.insert(pgSkillProgress).values({
+            id: `sp_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`,
+            ...values,
+          } as any);
+        }
+      }),
+    );
+    return;
+  }
+
   await Promise.all(
-    skills.map(async (skill) => {
+    (skills as any[]).map(async (skill: any) => {
       const skillId = String(skill.id || skill._id);
       const existing = await SkillProgressModel.findOne({ userId, skillId });
       const previousAttempts = Number(existing?.attempts || 0);
@@ -574,6 +683,31 @@ quizRouter.post(
     const payload = questionSchema.parse(req.body);
     await assertTeacherManagedScope(req.authUser!, payload);
     const workflowDefaults = getWorkflowDefaults(req.authUser!);
+
+    if (USE_PG()) {
+      const id = payload.id || `q_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`;
+      const [created] = await db.insert(pgQuestions).values({
+        id,
+        text: payload.text,
+        options: payload.options,
+        correctOptionIndex: payload.correctOptionIndex,
+        explanation: payload.explanation || "",
+        videoUrl: payload.videoUrl || "",
+        imageUrl: payload.imageUrl || "",
+        skillIds: payload.skillIds,
+        pathId: payload.pathId,
+        subject: payload.subject,
+        sectionId: payload.sectionId || null,
+        difficulty: payload.difficulty,
+        type: payload.type,
+        ...workflowDefaults,
+        approvalStatus: req.authUser?.role === "admin"
+          ? payload.approvalStatus || workflowDefaults.approvalStatus
+          : workflowDefaults.approvalStatus,
+      } as any).returning();
+      return res.status(StatusCodes.CREATED).json(created);
+    }
+
     const created = await QuestionModel.create({
       ...payload,
       ...workflowDefaults,
@@ -592,6 +726,26 @@ quizRouter.patch(
   requireRole(["admin", "teacher", "supervisor"]),
   asyncHandler(async (req, res) => {
     const payload = questionBaseSchema.partial().parse(req.body);
+
+    if (USE_PG()) {
+      if (req.authUser?.role !== "admin") {
+        const result = await db.select().from(pgQuestions).where(eq(pgQuestions.id, req.params.id)).limit(1);
+        const existing = result[0];
+        if (!existing || existing.ownerId !== req.authUser?.id) {
+          return res.status(StatusCodes.NOT_FOUND).json({ message: "Question not found" });
+        }
+      }
+      const sanitizedPayload = sanitizeWorkflowUpdate(payload as Record<string, unknown>, req.authUser!);
+      const [updated] = await db.update(pgQuestions)
+        .set(sanitizedPayload as any)
+        .where(eq(pgQuestions.id, req.params.id))
+        .returning();
+      if (!updated) {
+        return res.status(StatusCodes.NOT_FOUND).json({ message: "Question not found" });
+      }
+      return res.json(updated);
+    }
+
     const documentQuery = buildOwnedDocumentQuery(req.params.id, req.authUser!);
     const existing = await QuestionModel.findOne(documentQuery);
 
@@ -616,6 +770,18 @@ quizRouter.delete(
   requireAuth,
   requireRole(["admin", "teacher", "supervisor"]),
   asyncHandler(async (req, res) => {
+    if (USE_PG()) {
+      if (req.authUser?.role !== "admin") {
+        const result = await db.select().from(pgQuestions).where(eq(pgQuestions.id, req.params.id)).limit(1);
+        const existing = result[0];
+        if (!existing || existing.ownerId !== req.authUser?.id) {
+          return res.status(StatusCodes.NOT_FOUND).json({ message: "Question not found" });
+        }
+      }
+      await db.delete(pgQuestions).where(eq(pgQuestions.id, req.params.id));
+      return res.json({ success: true });
+    }
+
     const deleted = await QuestionModel.findOneAndDelete(buildOwnedDocumentQuery(req.params.id, req.authUser!));
 
     if (!deleted) {
@@ -1064,6 +1230,12 @@ quizRouter.get(
   "/results",
   requireAuth,
   asyncHandler(async (req, res) => {
+    if (USE_PG()) {
+      const items = await db.select().from(pgQuizResults)
+        .where(eq(pgQuizResults.userId, req.authUser!.id))
+        .orderBy(desc(pgQuizResults.createdAt));
+      return res.json(items);
+    }
     const items = await QuizResultModel.find({ userId: req.authUser!.id }).sort({ createdAt: -1 });
     res.json(items);
   }),
@@ -1073,6 +1245,12 @@ quizRouter.get(
   "/skill-progress",
   requireAuth,
   asyncHandler(async (req, res) => {
+    if (USE_PG()) {
+      const items = await db.select().from(pgSkillProgress)
+        .where(eq(pgSkillProgress.userId, req.authUser!.id))
+        .orderBy(pgSkillProgress.mastery, desc(pgSkillProgress.lastAttemptAt));
+      return res.json(items);
+    }
     const items = await SkillProgressModel.find({ userId: req.authUser!.id }).sort({ mastery: 1, lastAttemptAt: -1 });
     res.json(items);
   }),
@@ -1082,6 +1260,13 @@ quizRouter.get(
   "/question-attempts",
   requireAuth,
   asyncHandler(async (req, res) => {
+    if (USE_PG()) {
+      const items = await db.select().from(pgQuestionAttempts)
+        .where(eq(pgQuestionAttempts.userId, req.authUser!.id))
+        .orderBy(desc(pgQuestionAttempts.createdAt))
+        .limit(500);
+      return res.json(items);
+    }
     const items = await QuestionAttemptModel.find({ userId: req.authUser!.id }).sort({ createdAt: -1 }).limit(500);
     res.json(items);
   }),
@@ -1092,6 +1277,24 @@ quizRouter.post(
   requireAuth,
   asyncHandler(async (req, res) => {
     const payload = questionAttemptSchema.parse(req.body);
+
+    if (USE_PG()) {
+      const question = await db.select().from(pgQuestions).where(eq(pgQuestions.id, payload.questionId)).limit(1);
+      const q = question[0];
+      const created = await db.insert(pgQuestionAttempts).values({
+        id: `qa_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`,
+        ...payload,
+        userId: req.authUser!.id,
+        date: payload.date || new Date().toISOString(),
+        pathId: String(q?.pathId || ""),
+        subjectId: String(q?.subject || ""),
+        sectionId: String(q?.sectionId || ""),
+        skillIds: Array.isArray(q?.skillIds) ? q.skillIds.map(String) : [],
+      } as any).returning();
+      await updateSkillProgressFromQuestionAttempt(created[0], req.authUser!.id);
+      return res.status(StatusCodes.CREATED).json(created[0]);
+    }
+
     const question = await QuestionModel.findOne(buildDocumentQuery(payload.questionId)).select("id pathId subject sectionId skillIds");
     const created = await QuestionAttemptModel.create({
       ...payload,
@@ -1141,6 +1344,34 @@ quizRouter.post(
     await assertTeacherManagedScope(req.authUser!, payload);
     const resolvedSkillIds = await resolveQuizSkillIds(payload.questionIds);
     const workflowDefaults = getWorkflowDefaults(req.authUser!);
+
+    if (USE_PG()) {
+      const id = payload.id || `quiz_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`;
+      const [created] = await db.insert(pgQuizzes).values({
+        id,
+        title: payload.title,
+        description: payload.description || "",
+        pathId: payload.pathId,
+        subjectId: payload.subjectId,
+        sectionId: payload.sectionId || null,
+        type: payload.type || "quiz",
+        mode: payload.mode || "regular",
+        settings: payload.settings || {},
+        questionIds: payload.questionIds || [],
+        skillIds: resolvedSkillIds,
+        targetGroupIds: payload.targetGroupIds || [],
+        targetUserIds: payload.targetUserIds || [],
+        dueDate: payload.dueDate || null,
+        isPublished: req.authUser?.role === "admin" ? payload.isPublished : false,
+        showOnPlatform: typeof payload.showOnPlatform === "boolean" ? payload.showOnPlatform : false,
+        ...workflowDefaults,
+        approvalStatus: req.authUser?.role === "admin"
+          ? payload.approvalStatus || workflowDefaults.approvalStatus
+          : workflowDefaults.approvalStatus,
+      } as any).returning();
+      return res.status(StatusCodes.CREATED).json(created);
+    }
+
     const created = await QuizModel.create({
       ...payload,
       ...workflowDefaults,
@@ -1161,6 +1392,113 @@ quizRouter.post(
   requireAuth,
   asyncHandler(async (req, res) => {
     const payload = quizSubmitSchema.parse(req.body);
+
+    if (USE_PG()) {
+      const quizResult = await db.select().from(pgQuizzes).where(eq(pgQuizzes.id, req.params.id)).limit(1);
+      const quiz = quizResult[0];
+      if (!quiz) {
+        return res.status(StatusCodes.NOT_FOUND).json({ message: "Quiz not found" });
+      }
+
+      const userResult = await db.select().from(pgUsers).where(eq(pgUsers.id, req.authUser!.id)).limit(1);
+      const authUser = userResult[0];
+      if (!authUser) {
+        return res.status(StatusCodes.NOT_FOUND).json({ message: "User not found" });
+      }
+
+      if (!(await canSubmitQuiz(quiz, authUser))) {
+        return res.status(StatusCodes.FORBIDDEN).json({ message: "You cannot submit this quiz" });
+      }
+
+      const questionIds = Array.isArray(quiz.questionIds) ? quiz.questionIds.map(String).filter(Boolean) : [];
+      const questions = questionIds.length
+        ? await db.select().from(pgQuestions).where(inArray(pgQuestions.id, questionIds))
+        : [];
+
+      if (questions.length === 0) {
+        return res.status(StatusCodes.BAD_REQUEST).json({ message: "Quiz has no valid questions" });
+      }
+
+      const allSkillIds = uniqueStrings(questions.flatMap((q: any) => (q.skillIds || []).map(String)));
+      const skills = allSkillIds.length
+        ? await db.select().from(pgSkills).where(inArray(pgSkills.id, allSkillIds))
+        : [];
+      const skillById = new Map(skills.map((s: any) => [String(s.id), s]));
+
+      let correctAnswers = 0, wrongAnswers = 0, unanswered = 0;
+      const skillStats = new Map<string, { total: number; correct: number }>();
+
+      const questionReview = questions.map((question: any) => {
+        const questionId = String(question.id);
+        const rawSelected = payload.answers[questionId];
+        const selectedOptionIndex = typeof rawSelected === "number" && rawSelected >= 0 ? rawSelected : undefined;
+        const isCorrect = selectedOptionIndex === Number(question.correctOptionIndex ?? 0);
+
+        if (selectedOptionIndex === undefined) { unanswered += 1; }
+        else if (isCorrect) { correctAnswers += 1; }
+        else { wrongAnswers += 1; }
+
+        (question.skillIds || []).map(String).filter(Boolean).forEach((skillId: string) => {
+          const current = skillStats.get(skillId) || { total: 0, correct: 0 };
+          current.total += 1;
+          if (isCorrect) current.correct += 1;
+          skillStats.set(skillId, current);
+        });
+
+        return {
+          questionId,
+          text: String(question.text || ""),
+          options: Array.isArray(question.options) ? question.options.map(String) : [],
+          correctOptionIndex: Number(question.correctOptionIndex ?? 0),
+          selectedOptionIndex,
+          explanation: question.explanation || "",
+          videoUrl: question.videoUrl || "",
+          imageUrl: question.imageUrl || "",
+          isCorrect,
+        };
+      });
+
+      const skillsAnalysis = Array.from(skillStats.entries()).map(([skillId, stats]) => {
+        const skill = skillById.get(skillId);
+        const mastery = Math.round((stats.correct / Math.max(stats.total, 1)) * 100);
+        const status = buildResultSkillStatus(mastery);
+        return {
+          skillId,
+          pathId: String(skill?.pathId || quiz.pathId || ""),
+          subjectId: String(skill?.subjectId || quiz.subjectId || ""),
+          sectionId: String(skill?.sectionId || quiz.sectionId || ""),
+          skill: String(skill?.name || "مهارة غير مسماة"),
+          mastery,
+          status,
+          recommendation: buildSkillRecommendation(mastery),
+          section: "",
+        };
+      });
+
+      const totalQuestions = questions.length;
+      const score = Math.round((correctAnswers / Math.max(totalQuestions, 1)) * 100);
+      const timeSpentMinutes = Math.max(0, Math.round(payload.timeSpentSeconds / 60));
+
+      const [result] = await db.insert(pgQuizResults).values({
+        id: `qr_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`,
+        userId: req.authUser!.id,
+        quizId: quiz.id,
+        quizTitle: String(quiz.title || "اختبار"),
+        score,
+        totalQuestions,
+        correctAnswers,
+        wrongAnswers,
+        unanswered,
+        timeSpent: timeSpentMinutes > 0 ? `${timeSpentMinutes} دقيقة` : "أقل من دقيقة",
+        date: new Date().toISOString(),
+        skillsAnalysis: skillsAnalysis,
+        questionReview: questionReview,
+      } as any).returning();
+
+      await updateSkillProgressFromResult(result, req.authUser!.id);
+      return res.status(StatusCodes.CREATED).json(result);
+    }
+
     const quiz = await QuizModel.findOne(buildDocumentQuery(req.params.id));
 
     if (!quiz) {
@@ -1293,6 +1631,36 @@ quizRouter.patch(
   requireRole(["admin", "teacher", "supervisor"]),
   asyncHandler(async (req, res) => {
     const payload = quizSchema.partial().parse(req.body);
+
+    if (USE_PG()) {
+      if (req.authUser?.role !== "admin") {
+        const result = await db.select().from(pgQuizzes).where(eq(pgQuizzes.id, req.params.id)).limit(1);
+        const existing = result[0];
+        if (!existing || existing.ownerId !== req.authUser?.id) {
+          return res.status(StatusCodes.NOT_FOUND).json({ message: "Quiz not found" });
+        }
+      }
+      const resolvedSkillIds = payload.questionIds
+        ? await resolveQuizSkillIds(payload.questionIds)
+        : undefined;
+      const sanitizedPayload = sanitizeWorkflowUpdate(
+        {
+          ...payload,
+          ...(resolvedSkillIds ? { skillIds: resolvedSkillIds } : {}),
+        } as Record<string, unknown>,
+        req.authUser!,
+        { respectPublished: true },
+      );
+      const [updated] = await db.update(pgQuizzes)
+        .set(sanitizedPayload as any)
+        .where(eq(pgQuizzes.id, req.params.id))
+        .returning();
+      if (!updated) {
+        return res.status(StatusCodes.NOT_FOUND).json({ message: "Quiz not found" });
+      }
+      return res.json(updated);
+    }
+
     const documentQuery = buildOwnedDocumentQuery(req.params.id, req.authUser!);
     const existing = await QuizModel.findOne(documentQuery);
 
@@ -1325,6 +1693,18 @@ quizRouter.delete(
   requireAuth,
   requireRole(["admin", "teacher", "supervisor"]),
   asyncHandler(async (req, res) => {
+    if (USE_PG()) {
+      if (req.authUser?.role !== "admin") {
+        const result = await db.select().from(pgQuizzes).where(eq(pgQuizzes.id, req.params.id)).limit(1);
+        const existing = result[0];
+        if (!existing || existing.ownerId !== req.authUser?.id) {
+          return res.status(StatusCodes.NOT_FOUND).json({ message: "Quiz not found" });
+        }
+      }
+      await db.delete(pgQuizzes).where(eq(pgQuizzes.id, req.params.id));
+      return res.json({ success: true });
+    }
+
     const deleted = await QuizModel.findOneAndDelete(buildOwnedDocumentQuery(req.params.id, req.authUser!));
 
     if (!deleted) {
@@ -1339,6 +1719,16 @@ quizRouter.post(
   "/results",
   requireAuth,
   asyncHandler(async (req, res) => {
+    if (USE_PG()) {
+      const [created] = await db.insert(pgQuizResults).values({
+        id: `qr_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`,
+        ...req.body,
+        userId: req.authUser!.id,
+      } as any).returning();
+      await updateSkillProgressFromResult(created, req.authUser!.id);
+      return res.status(StatusCodes.CREATED).json(created);
+    }
+
     const created = await QuizResultModel.create({
       ...req.body,
       userId: req.authUser!.id,

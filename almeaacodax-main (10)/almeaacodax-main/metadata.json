@@ -1,0 +1,8 @@
+{
+  "name": "منصة 64 اخر تعرديل 14 ابريل  مربوطة قاعدة بيانات ",
+  "description": "A comprehensive, AI-enhanced LMS platform featuring adaptive learning, gamification, and detailed analytics, built with React, Tailwind, and Gemini AI.",
+  "requestFramePermissions": [
+    "camera",
+    "microphone"
+  ]
+}

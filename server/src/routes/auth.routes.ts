@@ -6,7 +6,7 @@ import { eq, ilike, desc } from "drizzle-orm";
 import { z } from "zod";
 import { asyncHandler } from "../utils/asyncHandler.js";
 import { db } from "../db/connection.js";
-import { users, accessCodes, b2bPackages } from "../db/schema/index.js";
+import { users, accessCodes as pgAccessCodes, b2bPackages as pgB2bPackages } from "../db/schema/index.js";
 import { UserModel } from "../models/User.js";
 import { AccessCodeModel } from "../models/AccessCode.js";
 import { B2BPackageModel } from "../models/B2BPackage.js";
@@ -14,6 +14,9 @@ import { requireAuth, requireRole } from "../middleware/auth.js";
 import { signAccessToken } from "../utils/jwt.js";
 import { applyPurchaseToUser } from "../services/applyPurchaseToUser.js";
 import { env } from "../config/env.js";
+import { sendEmailVerification, verifyEmail, sendPasswordResetEmail, resetPassword } from "../services/authService.js";
+import { authRateLimiter, sensitiveActionRateLimiter } from "../middleware/rateLimiters.js";
+import { handleGoogleAuth, getGoogleAuthUrl } from "../services/googleAuthService.js";
 
 const USE_PG = () => env.USE_POSTGRES && env.DATABASE_URL;
 
@@ -80,6 +83,7 @@ export const authRouter = Router();
 
 authRouter.post(
   "/register",
+  authRateLimiter,
   asyncHandler(async (req, res) => {
     const payload = registerSchema.parse(req.body);
     const email = payload.email.toLowerCase();
@@ -143,6 +147,7 @@ authRouter.post(
 
 authRouter.post(
   "/login",
+  authRateLimiter,
   asyncHandler(async (req, res) => {
     const payload = loginSchema.parse(req.body);
     const email = payload.email.toLowerCase();
@@ -387,6 +392,49 @@ authRouter.post(
     const payload = redeemAccessCodeSchema.parse(req.body);
     const normalizedCode = payload.code.trim().toUpperCase();
 
+    if (USE_PG()) {
+      const userResult = await db.select().from(users).where(eq(users.id, req.authUser!.id)).limit(1);
+      const user = userResult[0];
+      if (!user) {
+        return res.status(StatusCodes.NOT_FOUND).json({ message: "User not found" });
+      }
+
+      const codeRows = await db.select().from(pgAccessCodes).where(eq(pgAccessCodes.code, normalizedCode)).limit(1);
+      const accessCode = codeRows[0];
+      if (!accessCode) {
+        return res.status(StatusCodes.NOT_FOUND).json({ message: "كود التفعيل غير موجود" });
+      }
+
+      if (accessCode.expiresAt <= Date.now()) {
+        return res.status(StatusCodes.BAD_REQUEST).json({ message: "انتهت صلاحية كود التفعيل" });
+      }
+
+      if ((accessCode.currentUses || 0) >= (accessCode.maxUses || 0)) {
+        return res.status(StatusCodes.BAD_REQUEST).json({ message: "تم استهلاك عدد التفعيلات المتاح لهذا الكود" });
+      }
+
+      const pkgRows = await db.select().from(pgB2bPackages).where(eq(pgB2bPackages.id, accessCode.packageId)).limit(1);
+      const linkedPackage = pkgRows[0];
+      if (!linkedPackage || linkedPackage.status !== "active") {
+        return res.status(StatusCodes.BAD_REQUEST).json({ message: "الباقة المرتبطة بهذا الكود غير متاحة الآن" });
+      }
+
+      if ((user.purchasedPackages || []).includes(linkedPackage.id)) {
+        return res.status(StatusCodes.CONFLICT).json({ message: "تم تفعيل هذه الباقة على الحساب بالفعل" });
+      }
+
+      const updatedUser = await applyPurchaseToUser(user.id, {
+        packageId: linkedPackage.id,
+        includedCourseIds: Array.isArray(linkedPackage.courseIds) ? linkedPackage.courseIds.map(String) : [],
+      });
+
+      await db.update(pgAccessCodes)
+        .set({ currentUses: (accessCode.currentUses || 0) + 1 } as any)
+        .where(eq(pgAccessCodes.id, accessCode.id));
+
+      return res.json({ user: serializeUser(updatedUser), accessCode, package: linkedPackage });
+    }
+
     const user = await UserModel.findById(req.authUser?.id);
     if (!user) {
       return res.status(StatusCodes.NOT_FOUND).json({
@@ -443,5 +491,89 @@ authRouter.post(
       accessCode,
       package: linkedPackage,
     });
+  }),
+);
+
+authRouter.post(
+  "/me/send-verification",
+  requireAuth,
+  asyncHandler(async (req, res) => {
+    const result = await sendEmailVerification(req.authUser!.id);
+    return res.json(result);
+  }),
+);
+
+authRouter.post(
+  "/verify-email",
+  sensitiveActionRateLimiter,
+  asyncHandler(async (req, res) => {
+    const { token } = z.object({ token: z.string() }).parse(req.body);
+    try {
+      const result = await verifyEmail(token);
+      return res.json(result);
+    } catch (err) {
+      return res.status(StatusCodes.BAD_REQUEST).json({
+        message: err instanceof Error ? err.message : "Invalid verification token",
+      });
+    }
+  }),
+);
+
+authRouter.post(
+  "/forgot-password",
+  sensitiveActionRateLimiter,
+  asyncHandler(async (req, res) => {
+    const { email } = z.object({ email: z.string().email() }).parse(req.body);
+    const result = await sendPasswordResetEmail(email);
+    return res.json(result);
+  }),
+);
+
+authRouter.post(
+  "/reset-password",
+  sensitiveActionRateLimiter,
+  asyncHandler(async (req, res) => {
+    const { token, newPassword } = z.object({
+      token: z.string(),
+      newPassword: z.string().min(6),
+    }).parse(req.body);
+    try {
+      const result = await resetPassword(token, newPassword);
+      return res.json(result);
+    } catch (err) {
+      return res.status(StatusCodes.BAD_REQUEST).json({
+        message: err instanceof Error ? err.message : "Invalid reset token",
+      });
+    }
+  }),
+);
+
+authRouter.get(
+  "/google/url",
+  asyncHandler(async (_req, res) => {
+    const url = getGoogleAuthUrl();
+    if (!url) {
+      return res.status(StatusCodes.NOT_IMPLEMENTED).json({
+        message: "Google OAuth is not configured",
+      });
+    }
+    return res.json({ url });
+  }),
+);
+
+authRouter.post(
+  "/google/callback",
+  authRateLimiter,
+  asyncHandler(async (req, res) => {
+    const { idToken } = z.object({ idToken: z.string() }).parse(req.body);
+
+    try {
+      const result = await handleGoogleAuth(idToken);
+      return res.json(result);
+    } catch (err) {
+      return res.status(StatusCodes.UNAUTHORIZED).json({
+        message: err instanceof Error ? err.message : "Google authentication failed",
+      });
+    }
   }),
 );

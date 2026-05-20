@@ -1,10 +1,11 @@
 import { Router } from "express";
 import { StatusCodes } from "http-status-codes";
+import { eq, inArray } from "drizzle-orm";
 import { z } from "zod";
 import { optionalAuth, requireAuth, requireRole } from "../middleware/auth.js";
 import { asyncHandler } from "../utils/asyncHandler.js";
 import { db } from "../db/connection.js";
-import { paths as pgPaths, levels as pgLevels, subjects as pgSubjects, sections as pgSections, skills as pgSkills } from "../db/schema/index.js";
+import { paths as pgPaths, levels as pgLevels, subjects as pgSubjects, sections as pgSections, skills as pgSkills, courses as pgCourses, topics as pgTopics } from "../db/schema/index.js";
 import { PathModel } from "../models/Path.js";
 import { LevelModel } from "../models/Level.js";
 import { SubjectModel } from "../models/Subject.js";
@@ -130,6 +131,25 @@ taxonomyRouter.post(
   requireRole(["admin", "teacher", "supervisor"]),
   asyncHandler(async (req, res) => {
     const payload = pathSchema.parse(req.body);
+
+    if (USE_PG()) {
+      const id = payload.id || `path_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`;
+      const [created] = await db.insert(pgPaths).values({
+        id,
+        name: payload.name,
+        color: payload.color,
+        icon: payload.icon,
+        iconUrl: payload.iconUrl,
+        iconStyle: payload.iconStyle,
+        showInNavbar: payload.showInNavbar ? 1 : 0,
+        showInHome: payload.showInHome ? 1 : 0,
+        isActive: payload.isActive !== false ? 1 : 0,
+        parentPathId: payload.parentPathId,
+        description: payload.description,
+      } as any).returning();
+      return res.status(StatusCodes.CREATED).json(created);
+    }
+
     const created = await PathModel.create({
       ...payload,
       ...(payload.id ? { _id: payload.id } : {}),
@@ -144,6 +164,27 @@ taxonomyRouter.patch(
   requireRole(["admin", "teacher", "supervisor"]),
   asyncHandler(async (req, res) => {
     const payload = pathSchema.partial().parse(req.body);
+
+    if (USE_PG()) {
+      const values: Record<string, unknown> = {};
+      if (payload.name !== undefined) values.name = payload.name;
+      if (payload.color !== undefined) values.color = payload.color;
+      if (payload.icon !== undefined) values.icon = payload.icon;
+      if (payload.iconUrl !== undefined) values.iconUrl = payload.iconUrl;
+      if (payload.iconStyle !== undefined) values.iconStyle = payload.iconStyle;
+      if (payload.showInNavbar !== undefined) values.showInNavbar = payload.showInNavbar ? 1 : 0;
+      if (payload.showInHome !== undefined) values.showInHome = payload.showInHome ? 1 : 0;
+      if (payload.isActive !== undefined) values.isActive = payload.isActive ? 1 : 0;
+      if (payload.parentPathId !== undefined) values.parentPathId = payload.parentPathId;
+      if (payload.description !== undefined) values.description = payload.description;
+
+      const [updated] = await db.update(pgPaths).set(values as any).where(eq(pgPaths.id, req.params.id)).returning();
+      if (!updated) {
+        return res.status(StatusCodes.NOT_FOUND).json({ message: "Path not found" });
+      }
+      return res.json(updated);
+    }
+
     const updated = await PathModel.findByIdAndUpdate(req.params.id, payload, { new: true });
     if (!updated) {
       return res.status(StatusCodes.NOT_FOUND).json({ message: "Path not found" });
@@ -157,6 +198,36 @@ taxonomyRouter.delete(
   requireAuth,
   requireRole(["admin", "teacher", "supervisor"]),
   asyncHandler(async (req, res) => {
+    if (USE_PG()) {
+      const existing = await db.select({ id: pgPaths.id }).from(pgPaths).where(eq(pgPaths.id, req.params.id)).limit(1);
+      if (!existing[0]) {
+        return res.status(StatusCodes.NOT_FOUND).json({ message: "Path not found" });
+      }
+
+      const subjectRows = await db.select({ id: pgSubjects.id }).from(pgSubjects).where(eq(pgSubjects.pathId, req.params.id));
+      const subjectIds = subjectRows.map((s) => s.id);
+      const sectionRows = subjectIds.length > 0
+        ? await db.select({ id: pgSections.id }).from(pgSections).where(inArray(pgSections.subjectId, subjectIds))
+        : [];
+      const sectionIds = sectionRows.map((s) => s.id);
+      const skillRows = subjectIds.length > 0
+        ? await db.select({ id: pgSkills.id }).from(pgSkills).where(inArray(pgSkills.subjectId, subjectIds))
+        : [];
+      const skillIds = skillRows.map((s) => s.id);
+
+      await db.delete(pgPaths).where(eq(pgPaths.id, req.params.id));
+      await db.delete(pgLevels).where(eq(pgLevels.pathId, req.params.id));
+      await db.delete(pgSubjects).where(eq(pgSubjects.pathId, req.params.id));
+      await db.delete(pgTopics).where(eq(pgTopics.pathId, req.params.id));
+      await db.delete(pgCourses).where(eq(pgCourses.pathId, req.params.id));
+      if (subjectIds.length > 0) {
+        await db.delete(pgSections).where(inArray(pgSections.subjectId, subjectIds));
+        await db.delete(pgSkills).where(inArray(pgSkills.subjectId, subjectIds));
+      }
+
+      return res.json({ success: true, removedSections: sectionIds.length, removedSkills: skillIds.length });
+    }
+
     const deleted = await PathModel.findByIdAndDelete(req.params.id);
     if (!deleted) {
       return res.status(StatusCodes.NOT_FOUND).json({ message: "Path not found" });
@@ -215,6 +286,17 @@ taxonomyRouter.post(
   requireRole(["admin", "teacher", "supervisor"]),
   asyncHandler(async (req, res) => {
     const payload = levelSchema.parse(req.body);
+
+    if (USE_PG()) {
+      const id = payload.id || `level_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`;
+      const [created] = await db.insert(pgLevels).values({
+        id,
+        pathId: payload.pathId,
+        name: payload.name,
+      } as any).returning();
+      return res.status(StatusCodes.CREATED).json(created);
+    }
+
     const created = await LevelModel.create({
       ...payload,
       ...(payload.id ? { _id: payload.id } : {}),
@@ -229,6 +311,19 @@ taxonomyRouter.patch(
   requireRole(["admin", "teacher", "supervisor"]),
   asyncHandler(async (req, res) => {
     const payload = levelSchema.partial().parse(req.body);
+
+    if (USE_PG()) {
+      const values: Record<string, unknown> = {};
+      if (payload.name !== undefined) values.name = payload.name;
+      if (payload.pathId !== undefined) values.pathId = payload.pathId;
+
+      const [updated] = await db.update(pgLevels).set(values as any).where(eq(pgLevels.id, req.params.id)).returning();
+      if (!updated) {
+        return res.status(StatusCodes.NOT_FOUND).json({ message: "Level not found" });
+      }
+      return res.json(updated);
+    }
+
     const updated = await LevelModel.findByIdAndUpdate(req.params.id, payload, { new: true });
     if (!updated) {
       return res.status(StatusCodes.NOT_FOUND).json({ message: "Level not found" });
@@ -242,6 +337,26 @@ taxonomyRouter.delete(
   requireAuth,
   requireRole(["admin", "teacher", "supervisor"]),
   asyncHandler(async (req, res) => {
+    if (USE_PG()) {
+      const existing = await db.select({ id: pgLevels.id }).from(pgLevels).where(eq(pgLevels.id, req.params.id)).limit(1);
+      if (!existing[0]) {
+        return res.status(StatusCodes.NOT_FOUND).json({ message: "Level not found" });
+      }
+
+      const subjectRows = await db.select({ id: pgSubjects.id }).from(pgSubjects).where(eq(pgSubjects.levelId, req.params.id));
+      const subjectIds = subjectRows.map((s) => s.id);
+
+      await db.delete(pgLevels).where(eq(pgLevels.id, req.params.id));
+      if (subjectIds.length > 0) {
+        await db.delete(pgSubjects).where(inArray(pgSubjects.id, subjectIds));
+        await db.delete(pgSections).where(inArray(pgSections.subjectId, subjectIds));
+        await db.delete(pgSkills).where(inArray(pgSkills.subjectId, subjectIds));
+        await db.delete(pgTopics).where(inArray(pgTopics.subjectId, subjectIds));
+      }
+
+      return res.json({ success: true });
+    }
+
     const deleted = await LevelModel.findByIdAndDelete(req.params.id);
     if (!deleted) {
       return res.status(StatusCodes.NOT_FOUND).json({ message: "Level not found" });
@@ -295,6 +410,23 @@ taxonomyRouter.post(
   requireRole(["admin", "teacher", "supervisor"]),
   asyncHandler(async (req, res) => {
     const payload = subjectSchema.parse(req.body);
+
+    if (USE_PG()) {
+      const id = payload.id || `sub_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`;
+      const [created] = await db.insert(pgSubjects).values({
+        id,
+        pathId: payload.pathId,
+        levelId: payload.levelId || null,
+        name: payload.name,
+        color: payload.color,
+        icon: payload.icon,
+        iconUrl: payload.iconUrl,
+        iconStyle: payload.iconStyle,
+        settings: payload.settings || {},
+      } as any).returning();
+      return res.status(StatusCodes.CREATED).json(created);
+    }
+
     const created = await SubjectModel.create({
       ...payload,
       ...(payload.id ? { _id: payload.id } : {}),
@@ -309,6 +441,25 @@ taxonomyRouter.patch(
   requireRole(["admin", "teacher", "supervisor"]),
   asyncHandler(async (req, res) => {
     const payload = subjectSchema.partial().parse(req.body);
+
+    if (USE_PG()) {
+      const values: Record<string, unknown> = {};
+      if (payload.name !== undefined) values.name = payload.name;
+      if (payload.pathId !== undefined) values.pathId = payload.pathId;
+      if (payload.levelId !== undefined) values.levelId = payload.levelId;
+      if (payload.color !== undefined) values.color = payload.color;
+      if (payload.icon !== undefined) values.icon = payload.icon;
+      if (payload.iconUrl !== undefined) values.iconUrl = payload.iconUrl;
+      if (payload.iconStyle !== undefined) values.iconStyle = payload.iconStyle;
+      if (payload.settings !== undefined) values.settings = payload.settings;
+
+      const [updated] = await db.update(pgSubjects).set(values as any).where(eq(pgSubjects.id, req.params.id)).returning();
+      if (!updated) {
+        return res.status(StatusCodes.NOT_FOUND).json({ message: "Subject not found" });
+      }
+      return res.json(updated);
+    }
+
     const updated = await SubjectModel.findByIdAndUpdate(req.params.id, payload, { new: true });
     if (!updated) {
       return res.status(StatusCodes.NOT_FOUND).json({ message: "Subject not found" });
@@ -322,6 +473,20 @@ taxonomyRouter.delete(
   requireAuth,
   requireRole(["admin", "teacher", "supervisor"]),
   asyncHandler(async (req, res) => {
+    if (USE_PG()) {
+      const existing = await db.select({ id: pgSubjects.id }).from(pgSubjects).where(eq(pgSubjects.id, req.params.id)).limit(1);
+      if (!existing[0]) {
+        return res.status(StatusCodes.NOT_FOUND).json({ message: "Subject not found" });
+      }
+
+      await db.delete(pgSubjects).where(eq(pgSubjects.id, req.params.id));
+      await db.delete(pgSections).where(eq(pgSections.subjectId, req.params.id));
+      await db.delete(pgSkills).where(eq(pgSkills.subjectId, req.params.id));
+      await db.delete(pgTopics).where(eq(pgTopics.subjectId, req.params.id));
+
+      return res.json({ success: true });
+    }
+
     const deleted = await SubjectModel.findByIdAndDelete(req.params.id);
     if (!deleted) {
       return res.status(StatusCodes.NOT_FOUND).json({ message: "Subject not found" });
@@ -382,6 +547,17 @@ taxonomyRouter.post(
   requireRole(["admin", "teacher", "supervisor"]),
   asyncHandler(async (req, res) => {
     const payload = sectionSchema.parse(req.body);
+
+    if (USE_PG()) {
+      const id = payload.id || `sec_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`;
+      const [created] = await db.insert(pgSections).values({
+        id,
+        subjectId: payload.subjectId,
+        name: payload.name,
+      } as any).returning();
+      return res.status(StatusCodes.CREATED).json(created);
+    }
+
     const created = await SectionModel.create({
       ...payload,
       ...(payload.id ? { _id: payload.id } : {}),
@@ -396,6 +572,19 @@ taxonomyRouter.patch(
   requireRole(["admin", "teacher", "supervisor"]),
   asyncHandler(async (req, res) => {
     const payload = sectionSchema.partial().parse(req.body);
+
+    if (USE_PG()) {
+      const values: Record<string, unknown> = {};
+      if (payload.name !== undefined) values.name = payload.name;
+      if (payload.subjectId !== undefined) values.subjectId = payload.subjectId;
+
+      const [updated] = await db.update(pgSections).set(values as any).where(eq(pgSections.id, req.params.id)).returning();
+      if (!updated) {
+        return res.status(StatusCodes.NOT_FOUND).json({ message: "Section not found" });
+      }
+      return res.json(updated);
+    }
+
     const updated = await SectionModel.findByIdAndUpdate(req.params.id, payload, { new: true });
     if (!updated) {
       return res.status(StatusCodes.NOT_FOUND).json({ message: "Section not found" });
@@ -409,6 +598,16 @@ taxonomyRouter.delete(
   requireAuth,
   requireRole(["admin", "teacher", "supervisor"]),
   asyncHandler(async (req, res) => {
+    if (USE_PG()) {
+      const existing = await db.select({ id: pgSections.id }).from(pgSections).where(eq(pgSections.id, req.params.id)).limit(1);
+      if (!existing[0]) {
+        return res.status(StatusCodes.NOT_FOUND).json({ message: "Section not found" });
+      }
+      await db.delete(pgSections).where(eq(pgSections.id, req.params.id));
+      await db.delete(pgSkills).where(eq(pgSkills.sectionId, req.params.id));
+      return res.json({ success: true });
+    }
+
     const deleted = await SectionModel.findByIdAndDelete(req.params.id);
     if (!deleted) {
       return res.status(StatusCodes.NOT_FOUND).json({ message: "Section not found" });
@@ -471,6 +670,22 @@ taxonomyRouter.post(
   requireRole(["admin", "teacher", "supervisor"]),
   asyncHandler(async (req, res) => {
     const payload = skillSchema.parse(req.body);
+
+    if (USE_PG()) {
+      const id = payload.id || `sk_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`;
+      const [created] = await db.insert(pgSkills).values({
+        id,
+        pathId: payload.pathId,
+        subjectId: payload.subjectId,
+        sectionId: payload.sectionId,
+        name: payload.name,
+        description: payload.description || "",
+        lessonIds: payload.lessonIds || [],
+        questionIds: payload.questionIds || [],
+      } as any).returning();
+      return res.status(StatusCodes.CREATED).json(created);
+    }
+
     const created = await SkillModel.create({
       ...payload,
       ...(payload.id ? { _id: payload.id } : {}),
@@ -485,6 +700,24 @@ taxonomyRouter.patch(
   requireRole(["admin", "teacher", "supervisor"]),
   asyncHandler(async (req, res) => {
     const payload = skillSchema.partial().parse(req.body);
+
+    if (USE_PG()) {
+      const values: Record<string, unknown> = {};
+      if (payload.name !== undefined) values.name = payload.name;
+      if (payload.pathId !== undefined) values.pathId = payload.pathId;
+      if (payload.subjectId !== undefined) values.subjectId = payload.subjectId;
+      if (payload.sectionId !== undefined) values.sectionId = payload.sectionId;
+      if (payload.description !== undefined) values.description = payload.description;
+      if (payload.lessonIds !== undefined) values.lessonIds = payload.lessonIds;
+      if (payload.questionIds !== undefined) values.questionIds = payload.questionIds;
+
+      const [updated] = await db.update(pgSkills).set(values as any).where(eq(pgSkills.id, req.params.id)).returning();
+      if (!updated) {
+        return res.status(StatusCodes.NOT_FOUND).json({ message: "Skill not found" });
+      }
+      return res.json(updated);
+    }
+
     const updated = await SkillModel.findByIdAndUpdate(req.params.id, payload, { new: true });
     if (!updated) {
       return res.status(StatusCodes.NOT_FOUND).json({ message: "Skill not found" });
@@ -498,6 +731,15 @@ taxonomyRouter.delete(
   requireAuth,
   requireRole(["admin", "teacher", "supervisor"]),
   asyncHandler(async (req, res) => {
+    if (USE_PG()) {
+      const existing = await db.select({ id: pgSkills.id }).from(pgSkills).where(eq(pgSkills.id, req.params.id)).limit(1);
+      if (!existing[0]) {
+        return res.status(StatusCodes.NOT_FOUND).json({ message: "Skill not found" });
+      }
+      await db.delete(pgSkills).where(eq(pgSkills.id, req.params.id));
+      return res.json({ success: true });
+    }
+
     const deleted = await SkillModel.findByIdAndDelete(req.params.id);
     if (!deleted) {
       return res.status(StatusCodes.NOT_FOUND).json({ message: "Skill not found" });
