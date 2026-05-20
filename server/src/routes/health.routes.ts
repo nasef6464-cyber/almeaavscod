@@ -9,10 +9,13 @@ healthRouter.get("/", async (_req, res) => {
   if (env.USE_POSTGRES && env.DATABASE_URL) {
     let pgStatus = "disconnected";
     try {
-      await db.execute({ raw: "SELECT 1" } as any);
-      pgStatus = "connected";
+      const pool = (db as any).session?.client || (db as any).pool;
+      if (pool) {
+        const r = await pool.query("SELECT 1");
+        pgStatus = "connected";
+      }
     } catch (e: any) {
-      pgStatus = `error: ${(e.message || "").slice(0, 60)}`;
+      pgStatus = `error: ${(e.message || "").slice(0, 80)}`;
     }
     return res.json({
       status: "ok",
