@@ -623,6 +623,7 @@ CREATE TABLE "users" (
 	"favorites" text[] DEFAULT '{}',
 	"review_later" text[] DEFAULT '{}',
 	"created_at" timestamp DEFAULT now(),
+	"google_id" text,
 	"updated_at" timestamp DEFAULT now(),
 	CONSTRAINT "users_email_unique" UNIQUE("email")
 );
