@@ -6,7 +6,7 @@
   "scripts": {
     "dev": "tsx watch src/server.ts",
     "build": "tsc -p tsconfig.json",
-    "start": "npx tsx scripts/applyPgMigration.mjs && node dist/server.js",
+    "start": "node dist/server.js",
     "start:pg": "npx tsx src/scripts/migrateToPostgres.ts && npx tsx src/server.ts",
     "migrate": "npx tsx scripts/applyPgMigration.mjs",
     "check": "tsc --noEmit -p tsconfig.json",
