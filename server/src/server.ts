@@ -6,16 +6,20 @@ import { ensureAdminAccount } from "./services/ensureAdminAccount.js";
 import { ensureSkillTaxonomy } from "./services/ensureSkillTaxonomy.js";
 import { createSocketServer, setIoInstance } from "./sockets/index.js";
 import { startNotificationWorker } from "./queues/notificationQueue.js";
+import { applyPgMigration } from "./scripts/applyPgMigration.js";
 
 async function bootstrap() {
   await connectToDatabase();
 
+  if (env.USE_POSTGRES && env.DATABASE_URL) {
+    console.log("PostgreSQL mode — running migration...");
+    await applyPgMigration();
+    console.log("PostgreSQL mode — migration complete");
+  }
+
   if (!env.USE_POSTGRES) {
-    // Mongoose-only bootstrap (skip when using PostgreSQL)
     await ensureSkillTaxonomy();
     await ensureAdminAccount();
-  } else {
-    console.log("PostgreSQL mode — skipping Mongoose bootstrap");
   }
 
   const app = createApp();
