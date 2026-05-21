@@ -11,20 +11,21 @@ async function seedAdmin(pool: Pool) {
   const password = process.env.ADMIN_PASSWORD || "Nn@0120110367";
   const name = process.env.ADMIN_NAME || "NASFAHME";
 
+  const passwordHash = await bcrypt.hash(password, 10);
   const existing = await pool.query('SELECT id, role FROM users WHERE email = $1', [email]);
   if (existing.rows.length === 0) {
     const id = `admin_${Date.now()}`;
-    const passwordHash = await bcrypt.hash(password, 10);
     await pool.query(
       `INSERT INTO users (id, name, email, password_hash, role, is_active) VALUES ($1, $2, $3, $4, 'admin', true)`,
       [id, name, email, passwordHash]
     );
     console.log(`[seed] Created admin: ${email}`);
-  } else if (existing.rows[0].role !== "admin") {
-    await pool.query('UPDATE users SET role = $1, is_active = true WHERE email = $2', ['admin', email]);
-    console.log(`[seed] Upgraded user to admin: ${email}`);
   } else {
-    console.log(`[seed] Admin already exists: ${email}`);
+    await pool.query(
+      'UPDATE users SET name = $1, password_hash = $2, role = $3, is_active = true WHERE email = $4',
+      [name, passwordHash, 'admin', email]
+    );
+    console.log(`[seed] Updated admin: ${email}`);
   }
 }
 
