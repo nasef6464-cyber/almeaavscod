@@ -57,6 +57,11 @@ export async function applyPgMigration() {
 
     const alterStatements = [
       "ALTER TABLE users ADD COLUMN IF NOT EXISTS google_id text",
+      "ALTER TABLE courses ALTER COLUMN approved_at TYPE bigint",
+      "ALTER TABLE groups ALTER COLUMN approved_at TYPE bigint",
+      "ALTER TABLE library_items ALTER COLUMN approved_at TYPE bigint",
+      "ALTER TABLE questions ALTER COLUMN approved_at TYPE bigint",
+      "ALTER TABLE quizzes ALTER COLUMN approved_at TYPE bigint",
     ];
 
     for (const stmt of alterStatements) {

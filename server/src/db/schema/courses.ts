@@ -1,4 +1,4 @@
-import { pgTable, text, integer, boolean, varchar, jsonb, timestamp, index } from "drizzle-orm/pg-core";
+import { pgTable, text, integer, boolean, bigint, varchar, jsonb, timestamp, index } from "drizzle-orm/pg-core";
 
 // ============================================================
 // Courses, Lessons, Topics
@@ -47,7 +47,7 @@ export const courses = pgTable("courses", {
   assignedTeacherId: text("assigned_teacher_id").default(""),
   approvalStatus: varchar("approval_status", { length: 20 }).default("draft"),
   approvedBy: text("approved_by").default(""),
-  approvedAt: integer("approved_at"),
+  approvedAt: bigint("approved_at", { mode: "number" }),
   reviewerNotes: text("reviewer_notes").default(""),
   revenueSharePercentage: integer("revenue_share_percentage"),
   createdAt: timestamp("created_at").defaultNow(),
@@ -90,7 +90,7 @@ export const lessons = pgTable("lessons", {
   assignedTeacherId: text("assigned_teacher_id").default(""),
   approvalStatus: varchar("approval_status", { length: 20 }).default("draft"),
   approvedBy: text("approved_by").default(""),
-  approvedAt: integer("approved_at"),
+  approvedAt: bigint("approved_at", { mode: "number" }),
   reviewerNotes: text("reviewer_notes").default(""),
   revenueSharePercentage: integer("revenue_share_percentage"),
   createdAt: timestamp("created_at").defaultNow(),

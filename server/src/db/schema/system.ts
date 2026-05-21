@@ -1,4 +1,4 @@
-import { pgTable, text, integer, varchar, jsonb, timestamp, boolean, index } from "drizzle-orm/pg-core";
+import { pgTable, text, integer, bigint, varchar, jsonb, timestamp, boolean, index } from "drizzle-orm/pg-core";
 
 // ============================================================
 // Groups, Library, Homepage, Activity
@@ -43,7 +43,7 @@ export const libraryItems = pgTable("library_items", {
   assignedTeacherId: text("assigned_teacher_id"),
   approvalStatus: varchar("approval_status", { length: 20 }).default("draft"),
   approvedBy: text("approved_by"),
-  approvedAt: integer("approved_at"),
+  approvedAt: bigint("approved_at", { mode: "number" }),
   reviewerNotes: text("reviewer_notes"),
   revenueSharePercentage: integer("revenue_share_percentage"),
   createdAt: timestamp("created_at").defaultNow(),
