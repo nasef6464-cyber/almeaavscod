@@ -2,8 +2,31 @@ import { Pool } from "pg";
 import { readFileSync } from "fs";
 import { join, dirname } from "path";
 import { fileURLToPath } from "url";
+import bcrypt from "bcryptjs";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
+
+async function seedAdmin(pool: Pool) {
+  const email = (process.env.ADMIN_EMAIL || "nasef6464@gmail.com").toLowerCase();
+  const password = process.env.ADMIN_PASSWORD || "Nn@0120110367";
+  const name = process.env.ADMIN_NAME || "NASFAHME";
+
+  const existing = await pool.query('SELECT id, role FROM users WHERE email = $1', [email]);
+  if (existing.rows.length === 0) {
+    const id = `admin_${Date.now()}`;
+    const passwordHash = await bcrypt.hash(password, 10);
+    await pool.query(
+      `INSERT INTO users (id, name, email, password_hash, role, is_active) VALUES ($1, $2, $3, $4, 'admin', true)`,
+      [id, name, email, passwordHash]
+    );
+    console.log(`[seed] Created admin: ${email}`);
+  } else if (existing.rows[0].role !== "admin") {
+    await pool.query('UPDATE users SET role = $1, is_active = true WHERE email = $2', ['admin', email]);
+    console.log(`[seed] Upgraded user to admin: ${email}`);
+  } else {
+    console.log(`[seed] Admin already exists: ${email}`);
+  }
+}
 
 export async function applyPgMigration() {
   const pool = new Pool({
@@ -41,6 +64,8 @@ export async function applyPgMigration() {
         ok++;
       } catch { fail++; }
     }
+
+    await seedAdmin(pool);
 
     const tables = await pool.query(
       "SELECT table_name FROM information_schema.tables WHERE table_schema = 'public' ORDER BY table_name",
