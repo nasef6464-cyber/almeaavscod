@@ -7,7 +7,7 @@ export function notFoundHandler(req: Request, res: Response) {
 }
 
 export function errorHandler(
-  error: Error & { statusCode?: number; status?: number },
+  error: any,
   _req: Request,
   res: Response,
   _next: NextFunction,
@@ -15,7 +15,15 @@ export function errorHandler(
   const message = error.message || "Internal server error";
   const statusCode = error.statusCode || error.status || 500;
 
+  // Include underlying DB error details (Drizzle wraps PG errors in .cause or .detail)
+  const detail = error.cause?.message || error.detail || error.hint || "";
+
+  if (process.env.NODE_ENV !== "production") {
+    console.error("[error]", message, detail ? "| detail:" + detail : "", error.stack?.split("\n")[1] || "");
+  }
+
   res.status(statusCode).json({
     message,
+    ...(detail ? { detail } : {}),
   });
 }
