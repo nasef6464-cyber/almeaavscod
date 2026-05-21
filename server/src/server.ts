@@ -7,6 +7,10 @@ import { ensureSkillTaxonomy } from "./services/ensureSkillTaxonomy.js";
 import { createSocketServer, setIoInstance } from "./sockets/index.js";
 import { startNotificationWorker } from "./queues/notificationQueue.js";
 import { applyPgMigration } from "./scripts/applyPgMigration.js";
+import bcrypt from "bcryptjs";
+import { db } from "./db/connection.js";
+import { users } from "./db/schema/index.js";
+import { eq } from "drizzle-orm";
 
 async function bootstrap() {
   await connectToDatabase();
@@ -15,6 +19,30 @@ async function bootstrap() {
     console.log("PostgreSQL mode — running migration...");
     await applyPgMigration();
     console.log("PostgreSQL mode — migration complete");
+  }
+
+  if (env.USE_POSTGRES && env.DATABASE_URL) {
+    // Seed admin for PG
+    try {
+      const existing = await db.select().from(users).where(eq(users.email, env.ADMIN_EMAIL.toLowerCase())).limit(1);
+      if (!existing[0]) {
+        const passwordHash = await bcrypt.hash(env.ADMIN_PASSWORD, 10);
+        await db.insert(users).values({
+          id: `admin_${Date.now()}`,
+          name: env.ADMIN_NAME,
+          email: env.ADMIN_EMAIL.toLowerCase(),
+          passwordHash,
+          role: "admin",
+          isActive: true,
+        });
+        console.log("[admin] Created admin account for", env.ADMIN_EMAIL);
+      } else if (existing[0].role !== "admin") {
+        await db.update(users).set({ role: "admin", isActive: true }).where(eq(users.id, existing[0].id));
+        console.log("[admin] Upgraded user to admin:", env.ADMIN_EMAIL);
+      }
+    } catch (err) {
+      console.error("[admin] Error seeding admin:", err);
+    }
   }
 
   if (!env.USE_POSTGRES) {
