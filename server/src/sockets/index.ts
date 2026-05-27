@@ -1,7 +1,5 @@
 import type { Server as HttpServer } from "http";
 import { Server, Socket } from "socket.io";
-import { createAdapter } from "@socket.io/redis-adapter";
-import { createClient } from "redis";
 import { env } from "../config/env.js";
 
 type UserSocketMap = Map<string, Set<string>>;
@@ -38,14 +36,19 @@ export function createSocketServer(server: HttpServer) {
   });
 
   if (env.REDIS_URL) {
-    const pubClient = createClient({ url: env.REDIS_URL, prefix: `${env.REDIS_KEY_PREFIX}:socket:` });
-    const subClient = pubClient.duplicate();
-    Promise.all([pubClient.connect(), subClient.connect()]).then(() => {
-      io.adapter(createAdapter(pubClient, subClient));
-      console.log("[socket] Redis adapter enabled");
-    }).catch((err) => {
-      console.warn("[socket] Redis adapter failed, using in-memory:", err instanceof Error ? err.message : err);
-    });
+    (async () => {
+      try {
+        const { createClient } = await import("redis");
+        const { createAdapter } = await import("@socket.io/redis-adapter");
+        const pubClient = createClient({ url: env.REDIS_URL, prefix: `${env.REDIS_KEY_PREFIX}:socket:` });
+        const subClient = pubClient.duplicate();
+        await Promise.all([pubClient.connect(), subClient.connect()]);
+        io.adapter(createAdapter(pubClient, subClient));
+        console.log("[socket] Redis adapter enabled");
+      } catch (err) {
+        console.warn("[socket] Redis adapter failed, using in-memory:", err instanceof Error ? err.message : err);
+      }
+    })();
   }
 
   io.on("connection", (socket: Socket) => {
