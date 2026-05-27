@@ -18,14 +18,14 @@ healthRouter.get("/", async (_req, res) => {
     } catch (e: any) {
       pgStatus = `error: ${(e.message || "").slice(0, 80)}`;
     }
-    return res.json({
+    return res.status(200).json({
       status: "ok",
       database: `postgresql (${pgStatus})`,
       timestamp: new Date().toISOString(),
     });
   }
 
-  res.json({
+  res.status(200).json({
     status: "ok",
     database: mongoose.connection.readyState === 1 ? "mongodb (connected)" : "mongodb (disconnected)",
     timestamp: new Date().toISOString(),
