@@ -61,8 +61,8 @@ export const skills = pgTable("skills", {
   description: text("description").default(""),
   lessonIds: text("lesson_ids").array().default([]),
   questionIds: text("question_ids").array().default([]),
-  createdAt: bigint("created_at").default(0),
-  updatedAt: bigint("updated_at").default(0),
+  createdAt: bigint("created_at", { mode: "number" }).default(0),
+  updatedAt: bigint("updated_at", { mode: "number" }).default(0),
 }, (table) => [
   index("idx_skills_path_id").on(table.pathId),
   index("idx_skills_subject_id").on(table.subjectId),
