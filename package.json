@@ -64,6 +64,7 @@
     "smoke:typography": "node scripts/smoke-typography-contract.mjs",
     "smoke:platform-fonts": "node scripts/smoke-platform-fonts-contract.mjs",
     "smoke:seo": "node scripts/smoke-seo-contract.mjs",
+    "smoke:rbac-content-crud-scope": "node scripts/smoke-rbac-content-crud-scope-contract.mjs",
     "smoke:health-readiness": "node scripts/smoke-health-readiness-contract.mjs",
     "smoke:announcement-ads": "node scripts/smoke-announcement-ads-contract.mjs",
     "smoke:supervisor-dashboard": "node scripts/smoke-supervisor-dashboard-contract.mjs",

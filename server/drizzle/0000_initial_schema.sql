@@ -5,8 +5,8 @@ CREATE TABLE "access_codes" (
 	"package_id" text NOT NULL,
 	"max_uses" integer DEFAULT 1,
 	"current_uses" integer DEFAULT 0,
-	"expires_at" integer NOT NULL,
-	"created_at" integer DEFAULT 0,
+	"expires_at" bigint NOT NULL,
+	"created_at" bigint DEFAULT 0,
 	"updated_at" timestamp DEFAULT now(),
 	CONSTRAINT "access_codes_code_unique" UNIQUE("code")
 );
@@ -94,7 +94,7 @@ CREATE TABLE "b2b_packages" (
 	"discount_percentage" integer,
 	"max_students" integer DEFAULT 0,
 	"status" varchar(20) DEFAULT 'active',
-	"created_at" integer DEFAULT 0,
+	"created_at" bigint DEFAULT 0,
 	"updated_at" timestamp DEFAULT now()
 );
 --> statement-breakpoint
@@ -389,7 +389,7 @@ CREATE TABLE "payment_requests" (
 	"receipt_url" text DEFAULT '',
 	"notes" text DEFAULT '',
 	"reviewed_by" text DEFAULT '',
-	"reviewed_at" integer,
+	"reviewed_at" bigint,
 	"reviewer_notes" text DEFAULT '',
 	"created_at" timestamp DEFAULT now(),
 	"updated_at" timestamp DEFAULT now()
@@ -545,8 +545,8 @@ CREATE TABLE "skills" (
 	"description" text DEFAULT '',
 	"lesson_ids" text[] DEFAULT '{}',
 	"question_ids" text[] DEFAULT '{}',
-	"created_at" integer DEFAULT 0,
-	"updated_at" integer DEFAULT 0
+	"created_at" bigint DEFAULT 0,
+	"updated_at" bigint DEFAULT 0
 );
 --> statement-breakpoint
 CREATE TABLE "study_plans" (
@@ -563,8 +563,8 @@ CREATE TABLE "study_plans" (
 	"daily_minutes" integer DEFAULT 90,
 	"preferred_start_time" text DEFAULT '17:00',
 	"status" varchar(20) DEFAULT 'active',
-	"created_at" integer DEFAULT 0,
-	"updated_at" integer DEFAULT 0
+	"created_at" bigint DEFAULT 0,
+	"updated_at" bigint DEFAULT 0
 );
 --> statement-breakpoint
 CREATE TABLE "subjects" (

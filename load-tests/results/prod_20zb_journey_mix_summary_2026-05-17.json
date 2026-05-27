@@ -1,0 +1,98 @@
+[
+    {
+        "file":  "prod_20zb_health_c300_2026-05-17.jsonl",
+        "url":  "https://almeaacodax-k2ux.onrender.com/api/health",
+        "connections":  300,
+        "reqAvg":  134.9,
+        "p95":  0,
+        "p99":  4544,
+        "errors":  0,
+        "timeouts":  0,
+        "non2xx":  0,
+        "statusCodeStats":  {
+                                "200":  {
+                                            "count":  1349
+                                        }
+                            }
+    },
+    {
+        "file":  "prod_20zb_bootstrap_c300_2026-05-17.jsonl",
+        "url":  "https://almeaacodax-k2ux.onrender.com/api/content/bootstrap",
+        "connections":  300,
+        "reqAvg":  24.2,
+        "p95":  0,
+        "p99":  9380,
+        "errors":  94,
+        "timeouts":  94,
+        "non2xx":  0,
+        "statusCodeStats":  {
+                                "200":  {
+                                            "count":  242
+                                        }
+                            }
+    },
+    {
+        "file":  "prod_20zb_taxonomy_c300_2026-05-17.jsonl",
+        "url":  "https://almeaacodax-k2ux.onrender.com/api/taxonomy/bootstrap",
+        "connections":  300,
+        "reqAvg":  56.6,
+        "p95":  0,
+        "p99":  9945,
+        "errors":  121,
+        "timeouts":  121,
+        "non2xx":  0,
+        "statusCodeStats":  {
+                                "200":  {
+                                            "count":  566
+                                        }
+                            }
+    },
+    {
+        "file":  "prod_20zb_auth_me_c500_2026-05-17.jsonl",
+        "url":  "https://almeaacodax-k2ux.onrender.com/api/auth/me",
+        "connections":  500,
+        "reqAvg":  27.45,
+        "p95":  0,
+        "p99":  11556,
+        "errors":  190,
+        "timeouts":  190,
+        "non2xx":  0,
+        "statusCodeStats":  {
+                                "200":  {
+                                            "count":  247
+                                        }
+                            }
+    },
+    {
+        "file":  "prod_20zb_quiz_results_nototal_c500_2026-05-17.jsonl",
+        "url":  "https://almeaacodax-k2ux.onrender.com/api/quizzes/results?noTotal=true\u0026limit=20",
+        "connections":  500,
+        "reqAvg":  55.2,
+        "p95":  0,
+        "p99":  9606,
+        "errors":  194,
+        "timeouts":  194,
+        "non2xx":  0,
+        "statusCodeStats":  {
+                                "200":  {
+                                            "count":  552
+                                        }
+                            }
+    },
+    {
+        "file":  "prod_20zb_quiz_results_nototal_c1000_2026-05-17.jsonl",
+        "url":  "https://almeaacodax-k2ux.onrender.com/api/quizzes/results?noTotal=true\u0026limit=20",
+        "connections":  1000,
+        "reqAvg":  45.29,
+        "p95":  0,
+        "p99":  10764,
+        "errors":  322,
+        "timeouts":  322,
+        "non2xx":  0,
+        "statusCodeStats":  {
+                                "200":  {
+                                            "count":  317
+                                        }
+                            }
+    }
+]

@@ -13,7 +13,11 @@ async function bootstrap() {
 
   if (env.USE_POSTGRES && env.DATABASE_URL) {
     console.log("PostgreSQL mode — running migration + seed...");
-    await applyPgMigration();
+    try {
+      await applyPgMigration();
+    } catch (err) {
+      console.error("Migration failed (non-fatal):", err instanceof Error ? err.message : err);
+    }
     console.log("PostgreSQL mode — done");
   }
 

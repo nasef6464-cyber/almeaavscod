@@ -9,9 +9,9 @@ import { UserModel } from "../models/User.js";
 import { QuizResultModel } from "../models/QuizResult.js";
 import { SkillProgressModel } from "../models/SkillProgress.js";
 import { CourseModel } from "../models/Course.js";
-import { env } from "../config/env.js";
+import { USE_PG } from "../utils/usePg.js";
 
-const USE_PG = () => env.USE_POSTGRES && env.DATABASE_URL;
+
 
 export const parentRouter = Router();
 
@@ -40,8 +40,8 @@ parentRouter.get(
         subscriptionPlan: users.subscriptionPlan,
         isActive: users.isActive,
         createdAt: users.createdAt,
-      }).from(users).where(
-        and(eq(users.role, "student"), ...linkedStudentIds.map((id) => eq(users.id, id)))
+      }      ).from(users).where(
+        and(eq(users.role, "student"), inArray(users.id, linkedStudentIds))
       );
 
       return res.json({ children });

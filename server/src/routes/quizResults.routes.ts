@@ -7,9 +7,9 @@ import { requireAuth, requireRole } from "../middleware/auth.js";
 import { asyncHandler } from "../utils/asyncHandler.js";
 import { db } from "../db/connection.js";
 import { quizResults } from "../db/schema/index.js";
-import { env } from "../config/env.js";
+import { USE_PG } from "../utils/usePg.js";
 
-const USE_PG = () => env.USE_POSTGRES && env.DATABASE_URL;
+
 
 const quizResultsQuerySchema = z.object({
   page: z.coerce.number().int().min(1).default(1),
@@ -110,7 +110,8 @@ quizResultsRouter.get(
     if (USE_PG()) {
       const conditions = [eq(quizResults.userId, authUserId)];
       if (query.quizId) conditions.push(eq(quizResults.quizId, query.quizId));
-      if (query.status) conditions.push(eq(quizResults.score, query.status === "passed" ? 1 : 0));
+      if (query.status === "passed") conditions.push(gte(quizResults.score, 60));
+      if (query.status === "failed") conditions.push(lte(quizResults.score, 59));
       if (query.search) conditions.push(ilike(quizResults.quizTitle, `%${query.search}%`));
       if (query.dateFrom) conditions.push(gte(quizResults.createdAt, new Date(query.dateFrom)));
       if (query.dateTo) conditions.push(lte(quizResults.createdAt, new Date(query.dateTo)));
@@ -163,7 +164,8 @@ quizResultsRouter.get(
       const conditions = [];
       if (query.quizId) conditions.push(eq(quizResults.quizId, query.quizId));
       if (query.studentId) conditions.push(eq(quizResults.userId, query.studentId));
-      if (query.status) conditions.push(eq(quizResults.score, query.status === "passed" ? 1 : 0));
+      if (query.status === "passed") conditions.push(gte(quizResults.score, 60));
+      if (query.status === "failed") conditions.push(lte(quizResults.score, 59));
       if (query.search) conditions.push(ilike(quizResults.quizTitle, `%${query.search}%`));
       if (query.dateFrom) conditions.push(gte(quizResults.createdAt, new Date(query.dateFrom)));
       if (query.dateTo) conditions.push(lte(quizResults.createdAt, new Date(query.dateTo)));

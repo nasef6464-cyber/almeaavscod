@@ -8,9 +8,9 @@ import { courses } from "../db/schema/index.js";
 import { optionalAuth, requireAuth, requireRole } from "../middleware/auth.js";
 import { asyncHandler } from "../utils/asyncHandler.js";
 import { isStaffRole } from "../services/visibility.js";
-import { env } from "../config/env.js";
+import { USE_PG } from "../utils/usePg.js";
 
-const USE_PG = () => env.USE_POSTGRES && env.DATABASE_URL;
+
 
 const courseSchema = z.object({
   id: z.string().optional(),

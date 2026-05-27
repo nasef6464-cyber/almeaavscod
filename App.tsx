@@ -45,6 +45,8 @@ const LiveSessions = React.lazy(() => import('./pages/LiveSessions'));
 const QuizPage = React.lazy(() => import('./pages/QuizPage').then(module => ({ default: module.QuizPage })));
 const GenericPathPage = React.lazy(() => import('./pages/GenericPathPage').then(module => ({ default: module.GenericPathPage })));
 const CertificatePage = React.lazy(() => import('./pages/CertificatePage'));
+const Pricing = React.lazy(() => import('./pages/Pricing').then(m => ({ default: m.Pricing })));
+const ReviewSession = React.lazy(() => import('./pages/ReviewSession').then(m => ({ default: m.ReviewSession })));
 
 // Dashboards
 const loadAdminDashboardModule = () => import('./dashboards/admin/AdminDashboard');
@@ -833,6 +835,8 @@ const App: React.FC = () => {
                   <Route path="/reset-password" element={<ResetPassword />} />
                   <Route path="/verify-email" element={<VerifyEmail />} />
                   <Route path="/certificate/:code" element={<CertificatePage />} />
+                  <Route path="/pricing" element={<Pricing />} />
+                  <Route path="/review-session/:resultId" element={<ReviewSession />} />
                   
                   {/* Old Hardcoded Routes mapped to generic or kept if needed. The new pattern replaces old Nafes */}
                   <Route path="/category/:pathId" element={<GenericPathPage />} />

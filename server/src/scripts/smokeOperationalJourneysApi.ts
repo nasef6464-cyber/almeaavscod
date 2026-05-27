@@ -1,4 +1,4 @@
-const API_BASE = process.env.SMOKE_API_BASE_URL || process.env.SEED_API_BASE_URL || "https://almeaacodax-api.onrender.com/api";
+const API_BASE = process.env.SMOKE_API_BASE_URL || process.env.SEED_API_BASE_URL || "https://almeaavscod.onrender.com/api";
 const ADMIN_EMAIL = process.env.ADMIN_EMAIL || "nasef64@gmail.com";
 const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || "Nn@0120110367";
 

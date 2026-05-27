@@ -57,12 +57,26 @@ export async function applyPgMigration() {
 
     const alterStatements = [
       "ALTER TABLE users ADD COLUMN IF NOT EXISTS google_id text",
+      // Fix approved_at: integer → bigint (overflow at ~2.1B, Date.now() returns ~1.7T)
       "ALTER TABLE courses ALTER COLUMN approved_at TYPE bigint",
       "ALTER TABLE lessons ALTER COLUMN approved_at TYPE bigint",
       "ALTER TABLE groups ALTER COLUMN approved_at TYPE bigint",
       "ALTER TABLE library_items ALTER COLUMN approved_at TYPE bigint",
       "ALTER TABLE questions ALTER COLUMN approved_at TYPE bigint",
       "ALTER TABLE quizzes ALTER COLUMN approved_at TYPE bigint",
+      // Fix other timestamp integer columns
+      "ALTER TABLE access_codes ALTER COLUMN expires_at TYPE bigint",
+      "ALTER TABLE access_codes ALTER COLUMN created_at TYPE bigint",
+      "ALTER TABLE b2b_packages ALTER COLUMN created_at TYPE bigint",
+      "ALTER TABLE payment_requests ALTER COLUMN reviewed_at TYPE bigint",
+      "ALTER TABLE skills ALTER COLUMN created_at TYPE bigint",
+      "ALTER TABLE skills ALTER COLUMN updated_at TYPE bigint",
+      "ALTER TABLE study_plans ALTER COLUMN created_at TYPE bigint",
+      "ALTER TABLE study_plans ALTER COLUMN updated_at TYPE bigint",
+      // Missing columns on certificates table
+      "ALTER TABLE certificates ADD COLUMN IF NOT EXISTS path_id text DEFAULT ''",
+      "ALTER TABLE certificates ADD COLUMN IF NOT EXISTS student_name text DEFAULT ''",
+      "ALTER TABLE certificates ADD COLUMN IF NOT EXISTS completion_percentage integer DEFAULT 100",
     ];
 
     for (const stmt of alterStatements) {

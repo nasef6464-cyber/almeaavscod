@@ -30,3 +30,27 @@ healthRouter.get("/", async (_req, res) => {
     timestamp: new Date().toISOString(),
   });
 });
+
+healthRouter.get("/live", async (_req, res) => {
+  res.json({ status: "alive", timestamp: new Date().toISOString() });
+});
+
+healthRouter.get("/ready", async (_req, res) => {
+  let dbReady = false;
+  if (env.USE_POSTGRES && env.DATABASE_URL) {
+    try {
+      const pool = (db as any).session?.client || (db as any).pool;
+      if (pool) {
+        await pool.query("SELECT 1");
+        dbReady = true;
+      }
+    } catch { /* not ready */ }
+  } else {
+    dbReady = mongoose.connection.readyState === 1;
+  }
+
+  if (dbReady) {
+    return res.json({ status: "ready", database: "connected", timestamp: new Date().toISOString() });
+  }
+  res.status(503).json({ status: "not ready", database: "disconnected", timestamp: new Date().toISOString() });
+});

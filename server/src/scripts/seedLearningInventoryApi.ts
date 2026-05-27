@@ -1,4 +1,4 @@
-const API_BASE = process.env.SEED_API_BASE_URL || "https://almeaacodax-api.onrender.com/api";
+const API_BASE = process.env.SEED_API_BASE_URL || "https://almeaavscod.onrender.com/api";
 const ADMIN_EMAIL = process.env.ADMIN_EMAIL || "nasef64@gmail.com";
 const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || "Nn@0120110367";
 const SAMPLE_VIDEO_URL = "https://www.w3schools.com/html/mov_bbb.mp4";

@@ -6,7 +6,7 @@ services:
     plan: free
     rootDir: server
     buildCommand: npm install --include=dev
-    startCommand: npx tsx scripts/applyPgMigration.mjs && npx tsx src/server.ts
+    startCommand: npx tsx src/server.ts
     envVars:
       - key: NODE_ENV
         value: production

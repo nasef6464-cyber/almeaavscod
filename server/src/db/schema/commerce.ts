@@ -1,4 +1,4 @@
-import { pgTable, text, integer, varchar, timestamp, boolean, index } from "drizzle-orm/pg-core";
+import { pgTable, text, integer, bigint, varchar, timestamp, boolean, index } from "drizzle-orm/pg-core";
 
 // ============================================================
 // Commerce: B2B Packages, Access Codes, Payments, Study Plans
@@ -16,7 +16,7 @@ export const b2bPackages = pgTable("b2b_packages", {
   discountPercentage: integer("discount_percentage"),
   maxStudents: integer("max_students").default(0),
   status: varchar("status", { length: 20 }).default("active"),
-  createdAt: integer("created_at").default(0),
+  createdAt: bigint("created_at").default(0),
   updatedAt: timestamp("updated_at").defaultNow(),
 }, (table) => [
   index("idx_b2b_packages_school_id").on(table.schoolId),
@@ -30,8 +30,8 @@ export const accessCodes = pgTable("access_codes", {
   packageId: text("package_id").notNull(),
   maxUses: integer("max_uses").default(1),
   currentUses: integer("current_uses").default(0),
-  expiresAt: integer("expires_at").notNull(),
-  createdAt: integer("created_at").default(0),
+  expiresAt: bigint("expires_at").notNull(),
+  createdAt: bigint("created_at").default(0),
   updatedAt: timestamp("updated_at").defaultNow(),
 }, (table) => [
   index("idx_access_codes_code").on(table.code),
@@ -58,7 +58,7 @@ export const paymentRequests = pgTable("payment_requests", {
   receiptUrl: text("receipt_url").default(""),
   notes: text("notes").default(""),
   reviewedBy: text("reviewed_by").default(""),
-  reviewedAt: integer("reviewed_at"),
+  reviewedAt: bigint("reviewed_at"),
   reviewerNotes: text("reviewer_notes").default(""),
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
@@ -97,8 +97,8 @@ export const studyPlans = pgTable("study_plans", {
   dailyMinutes: integer("daily_minutes").default(90),
   preferredStartTime: text("preferred_start_time").default("17:00"),
   status: varchar("status", { length: 20 }).default("active"),
-  createdAt: integer("created_at").default(0),
-  updatedAt: integer("updated_at").default(0),
+  createdAt: bigint("created_at").default(0),
+  updatedAt: bigint("updated_at").default(0),
 }, (table) => [
   index("idx_study_plans_user_id").on(table.userId),
   index("idx_study_plans_status").on(table.status),

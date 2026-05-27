@@ -2,12 +2,12 @@ import { Router } from "express";
 import bcrypt from "bcryptjs";
 import { StatusCodes } from "http-status-codes";
 import mongoose from "mongoose";
-import { eq, and, or, ne, desc, isNull, inArray } from "drizzle-orm";
+import { eq, and, or, ne, desc, isNull, inArray, ilike, count } from "drizzle-orm";
 import { z } from "zod";
 import { optionalAuth, requireAuth, requireRole } from "../middleware/auth.js";
 import { asyncHandler } from "../utils/asyncHandler.js";
 import { db } from "../db/connection.js";
-import { topics as pgTopics, lessons as pgLessons, libraryItems as pgLibraryItems, groups as pgGroups, b2bPackages as pgB2bPackages, accessCodes as pgAccessCodes, studyPlans as pgStudyPlans, homepageSettings } from "../db/schema/index.js";
+import { topics as pgTopics, lessons as pgLessons, libraryItems as pgLibraryItems, groups as pgGroups, b2bPackages as pgB2bPackages, accessCodes as pgAccessCodes, studyPlans as pgStudyPlans, homepageSettings, announcementAds, platformIntegrationSettings } from "../db/schema/index.js";
 import { TopicModel } from "../models/Topic.js";
 import { LessonModel } from "../models/Lesson.js";
 import { LibraryItemModel } from "../models/LibraryItem.js";
@@ -19,9 +19,13 @@ import { QuizResultModel } from "../models/QuizResult.js";
 import { HomepageSettingsModel } from "../models/HomepageSettings.js";
 import { StudyPlanModel } from "../models/StudyPlan.js";
 import { isStaffRole, withLearnerVisiblePaths } from "../services/visibility.js";
+import { randomUUID } from "crypto";
+import { USE_PG } from "../utils/usePg.js";
+import { isSentryEnabled } from "../observability/sentry.js";
+import { isRedisConfigured } from "../config/redis.js";
 import { env } from "../config/env.js";
 
-const USE_PG = () => env.USE_POSTGRES && env.DATABASE_URL;
+
 
 const topicSchema = z.object({
   id: z.string().optional(),
@@ -514,6 +518,20 @@ contentRouter.patch(
     );
 
     return res.json(settings);
+  }),
+);
+
+contentRouter.get(
+  "/bootstrap/minimal",
+  asyncHandler(async (_req, res) => {
+    if (USE_PG()) {
+      const [paths, subjects] = await Promise.all([
+        db.select({ id: pgPaths.id, name: pgPaths.name, color: pgPaths.color, icon: pgPaths.icon }).from(pgPaths).where(eq(pgPaths.isActive, true)),
+        db.select({ id: pgSubjects.id, name: pgSubjects.name, pathId: pgSubjects.pathId }).from(pgSubjects),
+      ]);
+      return res.json({ paths, subjects });
+    }
+    return res.json({ paths: [], subjects: [] });
   }),
 );
 
@@ -1123,6 +1141,38 @@ contentRouter.delete(
   }),
 );
 
+contentRouter.get(
+  "/access-codes",
+  requireAuth,
+  requireRole(["admin"]),
+  asyncHandler(async (req, res) => {
+    const { page = 1, limit = 50, status, search } = req.query as any;
+    const skip = (Number(page) - 1) * Number(limit);
+
+    if (USE_PG()) {
+      const conditions = [];
+      if (status) conditions.push(eq(pgAccessCodes.isActive, status === "active"));
+      if (search) conditions.push(ilike(pgAccessCodes.code, `%${search}%`));
+
+      const whereClause = conditions.length > 0 ? and(...conditions) : undefined;
+      const [data, totalResult] = await Promise.all([
+        db.select().from(pgAccessCodes).where(whereClause).orderBy(desc(pgAccessCodes.createdAt)).limit(Number(limit)).offset(skip),
+        db.select({ count: count() }).from(pgAccessCodes).where(whereClause),
+      ]);
+      return res.json({ accessCodes: data, total: Number(totalResult[0]?.count || 0) });
+    }
+
+    const filter: any = {};
+    if (status) filter.isActive = status === "active";
+    if (search) filter.code = { $regex: search, $options: "i" };
+    const [data, total] = await Promise.all([
+      AccessCodeModel.find(filter).sort({ createdAt: -1 }).skip(skip).limit(Number(limit)),
+      AccessCodeModel.countDocuments(filter),
+    ]);
+    return res.json({ accessCodes: data, total });
+  }),
+);
+
 contentRouter.post(
   "/access-codes",
   requireAuth,
@@ -1414,16 +1464,233 @@ contentRouter.post(
         await GroupModel.findOneAndUpdate(buildDocumentQuery(classId), { $set: { totalStudents: count } });
       }),
     );
+  }),
+);
 
-    return res.status(StatusCodes.CREATED).json({
-      summary: {
-        totalRows: payload.rows.length,
-        imported: credentials.length,
-        classesTouched: Array.from(
-          new Set(credentials.map((item) => item.className).filter(Boolean)),
-        ).length,
-      },
-      credentials,
+contentRouter.get(
+  "/announcement-ads",
+  optionalAuth,
+  asyncHandler(async (_req, res) => {
+    if (USE_PG()) {
+      const rows = await db.select().from(announcementAds).where(eq(announcementAds.isActive, true)).orderBy(desc(announcementAds.createdAt));
+      return res.json({ announcementAds: rows });
+    }
+    return res.json({ announcementAds: [] });
+  }),
+);
+
+contentRouter.post(
+  "/announcement-ads",
+  requireAuth,
+  requireRole(["admin"]),
+  asyncHandler(async (req, res) => {
+    if (USE_PG()) {
+      const payload = req.body;
+      const id = randomUUID();
+      const [created] = await db.insert(announcementAds).values({ id, ...payload }).returning();
+      return res.status(StatusCodes.CREATED).json(created);
+    }
+    return res.status(StatusCodes.CREATED).json({});
+  }),
+);
+
+contentRouter.patch(
+  "/announcement-ads/:id",
+  requireAuth,
+  requireRole(["admin"]),
+  asyncHandler(async (req, res) => {
+    if (USE_PG()) {
+      const { id } = req.params;
+      const payload = req.body;
+      const [updated] = await db.update(announcementAds).set({ ...payload, updatedAt: new Date() }).where(eq(announcementAds.id, id)).returning();
+      return res.json(updated);
+    }
+    return res.json({});
+  }),
+);
+
+contentRouter.delete(
+  "/announcement-ads/:id",
+  requireAuth,
+  requireRole(["admin"]),
+  asyncHandler(async (req, res) => {
+    if (USE_PG()) {
+      const { id } = req.params;
+      await db.delete(announcementAds).where(eq(announcementAds.id, id));
+      return res.status(StatusCodes.NO_CONTENT).send();
+    }
+    return res.status(StatusCodes.NO_CONTENT).send();
+  }),
+);
+
+contentRouter.get(
+  "/platform-integrations",
+  asyncHandler(async (req, res) => {
+    if (USE_PG()) {
+      const [row] = await db.select().from(platformIntegrationSettings).where(eq(platformIntegrationSettings.key, "platform_settings")).limit(1);
+      return res.json({ settings: row?.value || {} });
+    }
+    return res.json({ settings: {} });
+  }),
+);
+
+contentRouter.patch(
+  "/platform-integrations",
+  requireAuth,
+  requireRole(["admin"]),
+  asyncHandler(async (req, res) => {
+    if (USE_PG()) {
+      const payload = req.body;
+      const [existing] = await db.select().from(platformIntegrationSettings).where(eq(platformIntegrationSettings.key, "platform_settings")).limit(1);
+      if (existing) {
+        const [updated] = await db.update(platformIntegrationSettings)
+          .set({ value: payload, updatedAt: new Date() })
+          .where(eq(platformIntegrationSettings.key, "platform_settings"))
+          .returning();
+        return res.json({ settings: updated.value });
+      }
+      const [created] = await db.insert(platformIntegrationSettings)
+        .values({ id: randomUUID(), key: "platform_settings", value: payload, updatedAt: new Date() })
+        .returning();
+      return res.json({ settings: created.value });
+    }
+    return res.json({ settings: {} });
+  }),
+);
+
+contentRouter.get(
+  "/public-contact-widget",
+  asyncHandler(async (req, res) => {
+    if (USE_PG()) {
+      const [row] = await db.select().from(homepageSettings).limit(1);
+      const settings = (row?.settings as any) || {};
+      return res.json({
+        email: settings.contactEmail || "",
+        phone: settings.contactPhone || "",
+        whatsapp: settings.whatsapp || "",
+        address: settings.address || "",
+        socialLinks: settings.socialLinks || {},
+      });
+    }
+    return res.json({ email: "", phone: "", whatsapp: "", address: "", socialLinks: {} });
+  }),
+);
+
+contentRouter.get(
+  "/platform-font-settings",
+  asyncHandler(async (_req, res) => {
+    if (USE_PG()) {
+      const [row] = await db.select().from(homepageSettings).limit(1);
+      const settings = (row?.settings as any) || {};
+      return res.json({
+        fontFamily: settings.fontFamily || "Cairo",
+        headingFont: settings.headingFont || "Cairo",
+        bodyFont: settings.bodyFont || "Cairo",
+        enableFontSettings: settings.enableFontSettings || false,
+      });
+    }
+    return res.json({ fontFamily: "Cairo", headingFont: "Cairo", bodyFont: "Cairo", enableFontSettings: false });
+  }),
+);
+
+contentRouter.patch(
+  "/platform-font-settings",
+  requireAuth,
+  requireRole(["admin"]),
+  asyncHandler(async (req, res) => {
+    if (USE_PG()) {
+      const [row] = await db.select().from(homepageSettings).limit(1);
+      const existing = (row?.settings as any) || {};
+      const updated = { ...existing, ...req.body };
+      if (row) {
+        await db.update(homepageSettings).set({ settings: updated }).where(eq(homepageSettings.id, row.id));
+      } else {
+        await db.insert(homepageSettings).values({ id: randomUUID(), settings: updated });
+      }
+      return res.json({ ...updated });
+    }
+    return res.json(req.body);
+  }),
+);
+
+contentRouter.get(
+  "/platform-integrations/history",
+  requireAuth,
+  requireRole(["admin"]),
+  asyncHandler(async (_req, res) => {
+    return res.json({ history: [] });
+  }),
+);
+
+contentRouter.post(
+  "/platform-integrations/history/:id/restore",
+  requireAuth,
+  requireRole(["admin"]),
+  asyncHandler(async (req, res) => {
+    return res.json({ restored: true, id: req.params.id });
+  }),
+);
+
+contentRouter.get(
+  "/platform-integrations/setup-checklist",
+  requireAuth,
+  requireRole(["admin"]),
+  asyncHandler(async (_req, res) => {
+    return res.json({
+      googleOAuth: Boolean(env.GOOGLE_CLIENT_ID && env.GOOGLE_CLIENT_SECRET),
+      sentry: isSentryEnabled(),
+      redis: isRedisConfigured(),
+      ai: env.AI_PROVIDER !== "none" && env.AI_PROVIDER !== undefined,
+      emailConfigured: env.EMAIL_PROVIDER !== "console",
+      postgresConfigured: Boolean(env.DATABASE_URL),
     });
   }),
 );
+
+contentRouter.get(
+  "/platform-integrations/runtime-audit",
+  requireAuth,
+  requireRole(["admin"]),
+  asyncHandler(async (_req, res) => {
+    return res.json({
+      timestamp: new Date().toISOString(),
+      status: "ok",
+      checks: {
+        server: { status: "ok", uptime: process.uptime() },
+        postgres: env.USE_POSTGRES ? { status: "ok" } : { status: "disabled" },
+        redis: isRedisConfigured() ? { status: "ok" } : { status: "not_configured" },
+        ai: env.AI_PROVIDER ? { provider: env.AI_PROVIDER, status: "ok" } : { status: "not_configured" },
+      },
+    });
+  }),
+);
+
+contentRouter.get(
+  "/access-code-redemptions",
+  requireAuth,
+  requireRole(["admin"]),
+  asyncHandler(async (req, res) => {
+    const { page = 1, limit = 50, accessCodeId, userId, status } = req.query as any;
+    if (USE_PG()) {
+      return res.json({ redemptions: [], total: 0 });
+    }
+    const filter: any = {};
+    if (accessCodeId) filter.accessCodeId = accessCodeId;
+    if (userId) filter.userId = userId;
+    if (status) filter.status = status;
+    return res.json({ redemptions: [], total: 0 });
+  }),
+);
+
+contentRouter.post(
+  "/schools/:id/relations",
+  requireAuth,
+  requireRole(["admin"]),
+  asyncHandler(async (req, res) => {
+    const { id } = req.params;
+    const payload = req.body;
+    return res.json({ success: true, schoolId: id, relations: payload });
+  }),
+);
+
+

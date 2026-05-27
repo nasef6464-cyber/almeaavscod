@@ -1,4 +1,4 @@
-import { pgTable, text, integer, varchar, jsonb, boolean, index } from "drizzle-orm/pg-core";
+import { pgTable, text, integer, bigint, varchar, jsonb, boolean, index } from "drizzle-orm/pg-core";
 
 // ============================================================
 // Taxonomy: Paths, Levels, Subjects, Sections, Skills
@@ -61,8 +61,8 @@ export const skills = pgTable("skills", {
   description: text("description").default(""),
   lessonIds: text("lesson_ids").array().default([]),
   questionIds: text("question_ids").array().default([]),
-  createdAt: integer("created_at").default(0),
-  updatedAt: integer("updated_at").default(0),
+  createdAt: bigint("created_at").default(0),
+  updatedAt: bigint("updated_at").default(0),
 }, (table) => [
   index("idx_skills_path_id").on(table.pathId),
   index("idx_skills_subject_id").on(table.subjectId),

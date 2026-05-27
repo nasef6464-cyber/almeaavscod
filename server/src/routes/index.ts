@@ -15,6 +15,10 @@ import { quizResultsRouter } from "./quizResults.routes.js";
 import { certificateRouter } from "./certificates.routes.js";
 import { uploadRouter } from "./upload.routes.js";
 import { parentRouter } from "./parent.routes.js";
+import { discussionsRouter } from "./discussions.routes.js";
+import { reviewRouter } from "./review.routes.js";
+import { leaderboardRouter } from "./leaderboard.routes.js";
+import { searchRouter } from "./search.routes.js";
 
 export const apiRouter = Router();
 
@@ -28,9 +32,14 @@ apiRouter.use("/payments", paymentRouter);
 apiRouter.use("/ai", aiRouter);
 apiRouter.use("/operations", operationsRouter);
 apiRouter.use("/backups", backupRouter);
+apiRouter.use("/backups/learning", backupRouter);
 apiRouter.use("/seo", seoRouter);
 apiRouter.use("/notifications", notificationRouter);
 apiRouter.use("/", quizResultsRouter);
 apiRouter.use("/certificates", certificateRouter);
 apiRouter.use("/uploads", uploadRouter);
 apiRouter.use("/parent", parentRouter);
+apiRouter.use("/discussions", discussionsRouter);
+apiRouter.use("/reviews", reviewRouter);
+apiRouter.use("/leaderboard", leaderboardRouter);
+apiRouter.use("/search", searchRouter);

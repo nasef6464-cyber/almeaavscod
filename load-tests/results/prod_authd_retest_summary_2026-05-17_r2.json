@@ -1,0 +1,60 @@
+[
+    {
+        "file":  "prod_authd_quizzes_results_c500_2026-05-17_r2.jsonl",
+        "connections":  500,
+        "reqAvg":  9.19,
+        "p95":  0,
+        "p99":  10270,
+        "errors":  412,
+        "timeouts":  412,
+        "non2xx":  0,
+        "statusCodeStats":  {
+                                "200":  {
+                                            "count":  101
+                                        }
+                            }
+    },
+    {
+        "file":  "prod_authd_quizzes_results_c1000_2026-05-17_r2.jsonl",
+        "connections":  1000,
+        "reqAvg":  0,
+        "p95":  0,
+        "p99":  0,
+        "errors":  1000,
+        "timeouts":  1000,
+        "non2xx":  0,
+        "statusCodeStats":  {
+
+                            }
+    },
+    {
+        "file":  "prod_authd_me_preferences_patch_c500_2026-05-17_r2.jsonl",
+        "connections":  500,
+        "reqAvg":  27.28,
+        "p95":  0,
+        "p99":  10565,
+        "errors":  358,
+        "timeouts":  358,
+        "non2xx":  300,
+        "statusCodeStats":  {
+                                "400":  {
+                                            "count":  300
+                                        }
+                            }
+    },
+    {
+        "file":  "prod_authd_me_preferences_patch_c1000_2026-05-17_r2.jsonl",
+        "connections":  1000,
+        "reqAvg":  76.6,
+        "p95":  0,
+        "p99":  9600,
+        "errors":  699,
+        "timeouts":  699,
+        "non2xx":  766,
+        "statusCodeStats":  {
+                                "400":  {
+                                            "count":  766
+                                        }
+                            }
+    }
+]

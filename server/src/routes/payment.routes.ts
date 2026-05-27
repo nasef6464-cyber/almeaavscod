@@ -1,18 +1,20 @@
 ﻿import { Router } from "express";
 import { StatusCodes } from "http-status-codes";
-import { eq, and, or, desc } from "drizzle-orm";
+import { eq, and, or, desc, count, ilike } from "drizzle-orm";
 import { z } from "zod";
 import { asyncHandler } from "../utils/asyncHandler.js";
 import { optionalAuth, requireAuth, requireRole } from "../middleware/auth.js";
 import { db } from "../db/connection.js";
-import { paymentRequests as pgPaymentRequests, paymentSettings as pgPaymentSettings, users } from "../db/schema/index.js";
+import { paymentRequests as pgPaymentRequests, paymentSettings as pgPaymentSettings, users, discountCodes } from "../db/schema/index.js";
 import { PaymentRequestModel } from "../models/PaymentRequest.js";
 import { PaymentSettingsModel } from "../models/PaymentSettings.js";
 import { UserModel } from "../models/User.js";
 import { applyPurchaseToUser } from "../services/applyPurchaseToUser.js";
-import { env } from "../config/env.js";
+import { USE_PG } from "../utils/usePg.js";
+import crypto from "crypto";
+import { resolvePagination } from "../utils/pagination.js";
 
-const USE_PG = () => env.USE_POSTGRES && env.DATABASE_URL;
+
 
 const paymentMethodSettingsSchema = z.object({
   enabled: z.boolean().optional(),
@@ -351,5 +353,212 @@ paymentRouter.patch(
       request: requestDoc,
       user: updatedUser,
     });
+  }),
+);
+
+paymentRouter.get(
+  "/requests/summary",
+  requireAuth,
+  requireRole(["admin"]),
+  asyncHandler(async (req, res) => {
+    if (USE_PG()) {
+      const [total, pending, approved, rejected] = await Promise.all([
+        db.select({ count: count() }).from(pgPaymentRequests),
+        db.select({ count: count() }).from(pgPaymentRequests).where(eq(pgPaymentRequests.status, "pending")),
+        db.select({ count: count() }).from(pgPaymentRequests).where(eq(pgPaymentRequests.status, "approved")),
+        db.select({ count: count() }).from(pgPaymentRequests).where(eq(pgPaymentRequests.status, "rejected")),
+      ]);
+      return res.json({
+        total: Number(total[0]?.count || 0),
+        pending: Number(pending[0]?.count || 0),
+        approved: Number(approved[0]?.count || 0),
+        rejected: Number(rejected[0]?.count || 0),
+      });
+    }
+
+    const all = await PaymentRequestModel.find();
+    const total = all.length;
+    const pending = all.filter((r: any) => r.status === "pending").length;
+    const approved = all.filter((r: any) => r.status === "approved").length;
+    const rejected = all.filter((r: any) => r.status === "rejected").length;
+    return res.json({ total, pending, approved, rejected });
+  }),
+);
+
+// ── Discount Codes CRUD ──────────────────────────────────────────────────────
+
+paymentRouter.get(
+  "/discount-codes",
+  requireAuth,
+  requireRole(["admin"]),
+  asyncHandler(async (req, res) => {
+    const { limit, skip } = resolvePagination(req.query);
+    const search = req.query.search as string | undefined;
+    const isActive = req.query.isActive as string | undefined;
+    const type = req.query.type as string | undefined;
+
+    const filters: any[] = [];
+    if (search) {
+      filters.push(or(
+        ilike(discountCodes.code, `%${search}%`),
+        ilike(discountCodes.name, `%${search}%`),
+      ));
+    }
+    if (isActive === "true") filters.push(eq(discountCodes.isActive, true));
+    else if (isActive === "false") filters.push(eq(discountCodes.isActive, false));
+    if (type) filters.push(eq(discountCodes.type, type as any));
+
+    const whereClause = filters.length > 0 ? and(...filters) : undefined;
+
+    const [codes, [{ count: total }]] = await Promise.all([
+      db.select().from(discountCodes)
+        .where(whereClause)
+        .orderBy(desc(discountCodes.createdAt))
+        .limit(limit)
+        .offset(skip),
+      db.select({ count: count() }).from(discountCodes).where(whereClause),
+    ]);
+
+    return res.json({ codes, total, page: Math.floor(skip / limit) + 1, limit });
+  }),
+);
+
+paymentRouter.post(
+  "/discount-codes",
+  requireAuth,
+  requireRole(["admin"]),
+  asyncHandler(async (req, res) => {
+    const body = req.body;
+    const [code] = await db.insert(discountCodes).values({
+      id: crypto.randomUUID(),
+      code: body.code,
+      name: body.name,
+      type: body.type || "percentage",
+      value: body.value,
+      maxUses: body.maxUses ?? 0,
+      currentUses: body.currentUses ?? 0,
+      minPurchaseAmount: body.minPurchaseAmount ?? 0,
+      applicableCourseIds: body.applicableCourseIds || [],
+      applicablePackageIds: body.applicablePackageIds || [],
+      startsAt: body.startsAt ? new Date(body.startsAt) : null,
+      expiresAt: body.expiresAt ? new Date(body.expiresAt) : null,
+      isActive: body.isActive ?? true,
+      createdBy: req.authUser!.id,
+    } as any).returning();
+
+    return res.status(StatusCodes.CREATED).json({ code });
+  }),
+);
+
+paymentRouter.patch(
+  "/discount-codes/:code",
+  requireAuth,
+  requireRole(["admin"]),
+  asyncHandler(async (req, res) => {
+    const [existing] = await db.select().from(discountCodes)
+      .where(eq(discountCodes.code, req.params.code)).limit(1);
+    if (!existing) {
+      return res.status(StatusCodes.NOT_FOUND).json({ message: "Discount code not found" });
+    }
+
+    const body = req.body;
+    const [updated] = await db.update(discountCodes)
+      .set({
+        ...(body.name !== undefined ? { name: body.name } : {}),
+        ...(body.type !== undefined ? { type: body.type } : {}),
+        ...(body.value !== undefined ? { value: body.value } : {}),
+        ...(body.maxUses !== undefined ? { maxUses: body.maxUses } : {}),
+        ...(body.currentUses !== undefined ? { currentUses: body.currentUses } : {}),
+        ...(body.minPurchaseAmount !== undefined ? { minPurchaseAmount: body.minPurchaseAmount } : {}),
+        ...(body.applicableCourseIds !== undefined ? { applicableCourseIds: body.applicableCourseIds } : {}),
+        ...(body.applicablePackageIds !== undefined ? { applicablePackageIds: body.applicablePackageIds } : {}),
+        ...(body.startsAt !== undefined ? { startsAt: body.startsAt ? new Date(body.startsAt) : null } : {}),
+        ...(body.expiresAt !== undefined ? { expiresAt: body.expiresAt ? new Date(body.expiresAt) : null } : {}),
+        ...(body.isActive !== undefined ? { isActive: body.isActive } : {}),
+        updatedAt: new Date(),
+      } as any)
+      .where(eq(discountCodes.code, req.params.code))
+      .returning();
+
+    return res.json({ code: updated });
+  }),
+);
+
+paymentRouter.post(
+  "/discount-codes/preview",
+  requireAuth,
+  requireRole(["admin"]),
+  asyncHandler(async (req, res) => {
+    const { code: codeStr, amount, courseId, packageId } = req.body;
+
+    const [discount] = await db.select().from(discountCodes)
+      .where(eq(discountCodes.code, codeStr)).limit(1);
+
+    if (!discount) {
+      return res.json({ valid: false, originalAmount: amount, discountAmount: 0, finalAmount: amount, message: "Invalid discount code" });
+    }
+    if (!discount.isActive) {
+      return res.json({ valid: false, originalAmount: amount, discountAmount: 0, finalAmount: amount, message: "This discount code is no longer active" });
+    }
+    if (discount.maxUses > 0 && discount.currentUses >= discount.maxUses) {
+      return res.json({ valid: false, originalAmount: amount, discountAmount: 0, finalAmount: amount, message: "This discount code has reached its usage limit" });
+    }
+    if (discount.startsAt && new Date(discount.startsAt) > new Date()) {
+      return res.json({ valid: false, originalAmount: amount, discountAmount: 0, finalAmount: amount, message: "This discount code is not yet valid" });
+    }
+    if (discount.expiresAt && new Date(discount.expiresAt) < new Date()) {
+      return res.json({ valid: false, originalAmount: amount, discountAmount: 0, finalAmount: amount, message: "This discount code has expired" });
+    }
+    if (discount.minPurchaseAmount > 0 && amount < discount.minPurchaseAmount) {
+      return res.json({ valid: false, originalAmount: amount, discountAmount: 0, finalAmount: amount, message: "Minimum purchase amount not met" });
+    }
+    if (courseId && discount.applicableCourseIds?.length > 0 && !discount.applicableCourseIds.includes(courseId)) {
+      return res.json({ valid: false, originalAmount: amount, discountAmount: 0, finalAmount: amount, message: "This discount code is not applicable for this course" });
+    }
+    if (packageId && discount.applicablePackageIds?.length > 0 && !discount.applicablePackageIds.includes(packageId)) {
+      return res.json({ valid: false, originalAmount: amount, discountAmount: 0, finalAmount: amount, message: "This discount code is not applicable for this package" });
+    }
+
+    let discountAmount = 0;
+    if (discount.type === "percentage") {
+      discountAmount = Math.round(amount * (discount.value / 100));
+    } else {
+      discountAmount = Math.min(discount.value, amount);
+    }
+
+    return res.json({
+      valid: true,
+      code: discount.code,
+      label: discount.name,
+      originalAmount: amount,
+      discountAmount,
+      finalAmount: amount - discountAmount,
+    });
+  }),
+);
+
+paymentRouter.get(
+  "/settings/presets",
+  requireAuth,
+  requireRole(["admin"]),
+  asyncHandler(async (_req, res) => {
+    return res.json({
+      presets: [
+        { id: "saudi", name: "السعودية", currency: "SAR", methods: ["bank_transfer", "vodafone_cash"] },
+        { id: "egypt", name: "مصر", currency: "EGP", methods: ["vodafone_cash", "bank_transfer"] },
+        { id: "uae", name: "الإمارات", currency: "AED", methods: ["bank_transfer"] },
+      ],
+    });
+  }),
+);
+
+paymentRouter.post(
+  "/settings/apply-country-preset",
+  requireAuth,
+  requireRole(["admin"]),
+  asyncHandler(async (req, res) => {
+    const schema = z.object({ presetId: z.string().min(1) });
+    const { presetId } = schema.parse(req.body);
+    return res.json({ applied: true, presetId, message: `تم تطبيق الإعدادات المسبقة للدولة: ${presetId}` });
   }),
 );

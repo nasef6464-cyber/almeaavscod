@@ -1,45 +1,56 @@
-import { Request, Response, NextFunction } from "express";
+import type { NextFunction, Request, Response } from "express";
+import { StatusCodes } from "http-status-codes";
 
-const UNSAFE_KEYS = ["$where", "$eq", "$ne", "$gt", "$gte", "$lt", "$lte", "$in", "$nin", "$and", "$or", "$not", "$nor", "$regex", "$exists", "$type", "$expr", "$jsonSchema", "$mod", "$text", "$all", "$elemMatch", "$size"];
+const MAX_SCAN_DEPTH = 12;
 
-function isUnsafeKey(key: string): boolean {
-  return key.startsWith("$") || key.includes(".");
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+  return Object.prototype.toString.call(value) === "[object Object]";
 }
 
-function checkObject(obj: Record<string, unknown>, path = ""): string | null {
-  for (const [key, value] of Object.entries(obj)) {
-    const fullPath = path ? `${path}.${key}` : key;
-    if (isUnsafeKey(key)) {
-      return fullPath;
+function findUnsafeMongoKey(value: unknown, path = "root", depth = 0): string | null {
+  if (depth > MAX_SCAN_DEPTH) {
+    return null;
+  }
+
+  if (Array.isArray(value)) {
+    for (let index = 0; index < value.length; index += 1) {
+      const unsafePath = findUnsafeMongoKey(value[index], `${path}[${index}]`, depth + 1);
+      if (unsafePath) {
+        return unsafePath;
+      }
     }
-    if (typeof value === "object" && value !== null && !Array.isArray(value)) {
-      const result = checkObject(value as Record<string, unknown>, fullPath);
-      if (result) return result;
+    return null;
+  }
+
+  if (!isPlainObject(value)) {
+    return null;
+  }
+
+  for (const [key, nestedValue] of Object.entries(value)) {
+    if (key.startsWith("$") || key.includes(".")) {
+      return `${path}.${key}`;
+    }
+
+    const unsafePath = findUnsafeMongoKey(nestedValue, `${path}.${key}`, depth + 1);
+    if (unsafePath) {
+      return unsafePath;
     }
   }
+
   return null;
 }
 
 export function rejectUnsafeMongoKeys(req: Request, res: Response, next: NextFunction) {
-  const body = req.body as Record<string, unknown> | undefined;
-  if (body && typeof body === "object") {
-    const unsafeKey = checkObject(body);
-    if (unsafeKey) {
-      return res.status(400).json({
-        message: `Unsafe key detected: ${unsafeKey}`,
-      });
-    }
+  const unsafeBodyKey = findUnsafeMongoKey(req.body, "body");
+  const unsafeQueryKey = findUnsafeMongoKey(req.query, "query");
+  const unsafePath = unsafeBodyKey || unsafeQueryKey;
+
+  if (unsafePath) {
+    return res.status(StatusCodes.BAD_REQUEST).json({
+      message: "Request contains unsafe field names",
+      requestId: req.requestId,
+    });
   }
 
-  const query = req.query as Record<string, unknown>;
-  if (query && typeof query === "object") {
-    const unsafeKey = checkObject(query);
-    if (unsafeKey) {
-      return res.status(400).json({
-        message: `Unsafe query key detected: ${unsafeKey}`,
-      });
-    }
-  }
-
-  next();
+  return next();
 }

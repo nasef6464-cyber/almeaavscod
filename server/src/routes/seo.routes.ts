@@ -1,5 +1,9 @@
 import { Router } from "express";
 import { env } from "../config/env.js";
+import { eq } from "drizzle-orm";
+import { USE_PG } from "../utils/usePg.js";
+import { db } from "../db/connection.js";
+import { paths as pgPaths, subjects as pgSubjects } from "../db/schema/index.js";
 import { PathModel } from "../models/Path.js";
 import { SubjectModel } from "../models/Subject.js";
 
@@ -33,10 +37,19 @@ const routeUrl = (baseUrl: string, routePath: string) => `${baseUrl}${routePath}
 
 async function buildSeoEntries(): Promise<SeoEntry[]> {
   const baseUrl = cleanBaseUrl();
-  const [paths, subjects] = await Promise.all([
-    PathModel.find({ isActive: { $ne: false } }).sort({ createdAt: 1 }).lean(),
-    SubjectModel.find({}).sort({ createdAt: 1 }).lean(),
-  ]);
+  let paths, subjects;
+
+  if (USE_PG()) {
+    [paths, subjects] = await Promise.all([
+      db.select().from(pgPaths).where(eq(pgPaths.isActive, true)).orderBy(pgPaths.createdAt),
+      db.select().from(pgSubjects).orderBy(pgSubjects.createdAt),
+    ]);
+  } else {
+    [paths, subjects] = await Promise.all([
+      PathModel.find({ isActive: { $ne: false } }).sort({ createdAt: 1 }).lean(),
+      SubjectModel.find({}).sort({ createdAt: 1 }).lean(),
+    ]);
+  }
 
   const entries: SeoEntry[] = [
     {
@@ -63,7 +76,7 @@ async function buildSeoEntries(): Promise<SeoEntry[]> {
   ];
 
   for (const path of paths) {
-    const pathId = String(path._id || "").trim();
+    const pathId = String(path.id || path._id || "").trim();
     if (!pathId) continue;
     entries.push({
       loc: routeUrl(baseUrl, `/category/${encodeURIComponent(pathId)}`),
@@ -73,9 +86,12 @@ async function buildSeoEntries(): Promise<SeoEntry[]> {
       title: String(path.name || pathId),
     });
 
-    const pathSubjects = subjects.filter((subject) => String(subject.pathId || "") === pathId);
+    const pathSubjects = subjects.filter((subject) => {
+      const spId = String(subject.pathId || "").trim();
+      return spId === pathId;
+    });
     for (const subject of pathSubjects) {
-      const subjectId = String(subject._id || "").trim();
+      const subjectId = String(subject.id || subject._id || "").trim();
       if (!subjectId) continue;
       entries.push({
         loc: routeUrl(baseUrl, `/category/${encodeURIComponent(pathId)}?subject=${encodeURIComponent(subjectId)}`),

@@ -2,7 +2,7 @@ import { Router } from "express";
 import bcrypt from "bcryptjs";
 import { StatusCodes } from "http-status-codes";
 import mongoose from "mongoose";
-import { eq, ilike, desc } from "drizzle-orm";
+import { eq, and, ilike, desc, count } from "drizzle-orm";
 import { z } from "zod";
 import { asyncHandler } from "../utils/asyncHandler.js";
 import { db } from "../db/connection.js";
@@ -18,8 +18,9 @@ import { sendEmailVerification, verifyEmail, sendPasswordResetEmail, resetPasswo
 import { authRateLimiter, sensitiveActionRateLimiter } from "../middleware/rateLimiters.js";
 import { handleGoogleAuth, handleGoogleCallback, getGoogleAuthUrl } from "../services/googleAuthService.js";
 import { issueCsrfToken } from "../middleware/csrf.js";
+import { USE_PG } from "../utils/usePg.js";
 
-const USE_PG = () => env.USE_POSTGRES && env.DATABASE_URL;
+
 
 const loginSchema = z.object({
   email: z.string().email(),
@@ -201,6 +202,7 @@ authRouter.post(
 
 authRouter.post(
   "/admin/users",
+  sensitiveActionRateLimiter,
   requireAuth,
   requireRole(["admin"]),
   asyncHandler(async (req, res) => {
@@ -213,20 +215,7 @@ authRouter.post(
       const existing = await db.select().from(users).where(eq(users.email, email)).limit(1);
 
       if (existing[0]) {
-        const [updated] = await db.update(users)
-          .set({
-            name: payload.name,
-            passwordHash,
-            role: payload.role,
-            isActive: true,
-            linkedStudentIds: payload.linkedStudentIds || [],
-            managedPathIds: payload.managedPathIds || [],
-            managedSubjectIds: payload.managedSubjectIds || [],
-          })
-          .where(eq(users.id, existing[0].id))
-          .returning();
-
-        return res.status(StatusCodes.CREATED).json({ user: serializeUser(updated) });
+        return res.status(StatusCodes.CONFLICT).json({ message: "User with this email already exists" });
       }
 
       const [user] = await db.insert(users).values({
@@ -244,20 +233,21 @@ authRouter.post(
       return res.status(StatusCodes.CREATED).json({ user: serializeUser(user) });
     }
 
-    const user = await UserModel.findOneAndUpdate(
-      { email },
-      {
-        name: payload.name,
-        email,
-        passwordHash,
-        role: payload.role,
-        isActive: true,
-        linkedStudentIds: payload.linkedStudentIds || [],
-        managedPathIds: payload.managedPathIds || [],
-        managedSubjectIds: payload.managedSubjectIds || [],
-      },
-      { upsert: true, new: true, setDefaultsOnInsert: true },
-    );
+    const existing = await UserModel.findOne({ email });
+    if (existing) {
+      return res.status(StatusCodes.CONFLICT).json({ message: "User with this email already exists" });
+    }
+
+    const user = await UserModel.create({
+      name: payload.name,
+      email,
+      passwordHash,
+      role: payload.role,
+      isActive: true,
+      linkedStudentIds: payload.linkedStudentIds || [],
+      managedPathIds: payload.managedPathIds || [],
+      managedSubjectIds: payload.managedSubjectIds || [],
+    });
 
     return res.status(StatusCodes.CREATED).json({ user: serializeUser(user) });
   }),
@@ -265,25 +255,46 @@ authRouter.post(
 
 authRouter.get(
   "/admin/users",
+  sensitiveActionRateLimiter,
   requireAuth,
   requireRole(["admin"]),
-  asyncHandler(async (_req, res) => {
+  asyncHandler(async (req, res) => {
+    const { page = 1, limit = 200, search, role } = req.query as any;
+    const skip = (Number(page) - 1) * Number(limit);
+
     if (USE_PG()) {
-      const allUsers = await db.select().from(users).orderBy(desc(users.createdAt));
-      return res.json({ users: allUsers.map(serializeUser) });
+      const conditions = [];
+      if (search) conditions.push(ilike(users.name, `%${search}%`));
+      if (role) conditions.push(eq(users.role, role));
+      const whereClause = conditions.length > 0 ? and(...conditions) : undefined;
+
+      const [allUsers, totalResult] = await Promise.all([
+        db.select().from(users).where(whereClause).orderBy(desc(users.createdAt)).limit(Number(limit)).offset(skip),
+        db.select({ count: count() }).from(users).where(whereClause),
+      ]);
+      return res.json({ users: allUsers.map(serializeUser), total: Number(totalResult[0]?.count || 0), page: Number(page), limit: Number(limit) });
     }
 
-    const allUsers = await UserModel.find().sort({ createdAt: -1 });
-    return res.json({ users: allUsers.map(serializeUser) });
+    const filter: any = {};
+    if (search) filter.name = { $regex: search, $options: "i" };
+    if (role) filter.role = role;
+    const allUsers = await UserModel.find(filter).sort({ createdAt: -1 }).skip(skip).limit(Number(limit));
+    const total = await UserModel.countDocuments(filter);
+    return res.json({ users: allUsers.map(serializeUser), total, page: Number(page), limit: Number(limit) });
   }),
 );
 
 authRouter.patch(
   "/admin/users/:id",
+  sensitiveActionRateLimiter,
   requireAuth,
   requireRole(["admin"]),
   asyncHandler(async (req, res) => {
     const payload = adminUpdateUserSchema.parse(req.body);
+
+    if (payload.role && req.params.id === req.authUser!.id) {
+      return res.status(StatusCodes.BAD_REQUEST).json({ message: "Cannot change your own role" });
+    }
 
     if (USE_PG()) {
       const [updated] = await db.update(users)

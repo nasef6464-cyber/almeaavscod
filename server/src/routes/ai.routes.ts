@@ -2,6 +2,11 @@ import { Router } from "express";
 import { z } from "zod";
 import { env } from "../config/env.js";
 import { asyncHandler } from "../utils/asyncHandler.js";
+import { requireAuth, requireRole } from "../middleware/auth.js";
+import { USE_PG } from "../utils/usePg.js";
+import { db } from "../db/connection.js";
+import { aiInteractions } from "../db/schema/index.js";
+import { desc, sql } from "drizzle-orm";
 
 const chatSchema = z.object({
   message: z.string().min(1).max(2000),
@@ -431,5 +436,69 @@ ${courseTitle}
     } catch {
       return res.json({ text: fallback });
     }
+  }),
+);
+
+aiRouter.get(
+  "/readiness",
+  asyncHandler(async (_req, res) => {
+    const provider = resolveProvider();
+    const ready = provider !== "none";
+    return res.json({
+      ready,
+      provider,
+      message: ready ? "AI provider is configured" : "No AI provider configured. Set GEMINI_API_KEY or AI_PROVIDER.",
+    });
+  }),
+);
+
+aiRouter.post(
+  "/providers/test",
+  asyncHandler(async (_req, res) => {
+    const provider = resolveProvider();
+    if (provider === "none") {
+      return res.json({ success: false, message: "No AI provider configured" });
+    }
+    try {
+      const result = await callAi("رد بكلمة واحدة: تمام");
+      return res.json({ success: true, message: result || "Provider responded" });
+    } catch (err: any) {
+      return res.json({ success: false, message: err?.message || "Provider test failed" });
+    }
+  }),
+);
+
+aiRouter.post(
+  "/admin-assistant",
+  requireAuth,
+  requireRole(["admin"]),
+  asyncHandler(async (req, res) => {
+    const schema = z.object({ message: z.string().min(1).max(3000) });
+    const { message } = schema.parse(req.body);
+    const prompt = `${ARABIC_TUTOR_RULES}\nأنت مساعد أدمن للمنصة التعليمية. أجب عن الاستفسار الإداري التالي:\n${message}`;
+    try {
+      const answer = await callAi(prompt);
+      return res.json({ text: answer || "لم أتمكن من معالجة الطلب." });
+    } catch {
+      return res.json({ text: "عذرًا، حدث خطأ في معالجة الطلب." });
+    }
+  }),
+);
+
+aiRouter.get(
+  "/interactions",
+  requireAuth,
+  requireRole(["admin"]),
+  asyncHandler(async (req, res) => {
+    const { page = 1, limit = 50 } = req.query as any;
+    const skip = (Number(page) - 1) * Number(limit);
+    if (USE_PG()) {
+      const [data, totalResult] = await Promise.all([
+        db.select().from(aiInteractions).orderBy(desc(aiInteractions.createdAt)).limit(Number(limit)).offset(skip),
+        db.select({ count: sql`count(*)` }).from(aiInteractions),
+      ]);
+      return res.json({ interactions: data, total: Number(totalResult[0]?.count || 0) });
+    }
+    return res.json({ interactions: [], total: 0 });
   }),
 );

@@ -18,9 +18,9 @@ import { QuizModel } from "../models/Quiz.js";
 import { TopicModel } from "../models/Topic.js";
 import { CourseModel } from "../models/Course.js";
 import { ensureSkillTaxonomy } from "../services/ensureSkillTaxonomy.js";
-import { env } from "../config/env.js";
+import { USE_PG } from "../utils/usePg.js";
 
-const USE_PG = () => env.USE_POSTGRES && env.DATABASE_URL;
+
 
 const pathSchema = z.object({
   id: z.string().optional(),

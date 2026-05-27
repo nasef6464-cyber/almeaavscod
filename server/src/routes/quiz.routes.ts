@@ -1,7 +1,7 @@
 import { Router } from "express";
 import { StatusCodes } from "http-status-codes";
 import mongoose from "mongoose";
-import { eq, and, or, ne, desc, isNull, inArray } from "drizzle-orm";
+import { eq, and, or, ne, desc, isNull, inArray, count } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "../db/connection.js";
 import { questions as pgQuestions, quizzes as pgQuizzes, quizResults as pgQuizResults, skillProgress as pgSkillProgress, skills as pgSkills, users as pgUsers, questionAttempts as pgQuestionAttempts } from "../db/schema/index.js";
@@ -20,9 +20,9 @@ import { SectionModel } from "../models/Section.js";
 import { optionalAuth, requireAuth, requireRole } from "../middleware/auth.js";
 import { asyncHandler } from "../utils/asyncHandler.js";
 import { getActivePathIds, isStaffRole, withLearnerVisiblePaths } from "../services/visibility.js";
-import { env } from "../config/env.js";
+import { USE_PG } from "../utils/usePg.js";
 
-const USE_PG = () => env.USE_POSTGRES && env.DATABASE_URL;
+
 
 const questionBaseSchema = z.object({
   id: z.string().optional(),
@@ -1735,5 +1735,30 @@ quizRouter.post(
     });
     await updateSkillProgressFromResult(created, req.authUser!.id);
     res.status(StatusCodes.CREATED).json(created);
+  }),
+);
+
+quizRouter.get(
+  "/results/scoped",
+  requireAuth,
+  asyncHandler(async (req, res) => {
+    const { page = 1, limit = 50 } = req.query as any;
+    const skip = (Number(page) - 1) * Number(limit);
+    const userId = req.authUser!.id;
+
+    if (USE_PG()) {
+      const [data, totalResult] = await Promise.all([
+        db.select().from(pgQuizResults)
+          .where(eq(pgQuizResults.userId, userId))
+          .orderBy(desc(pgQuizResults.createdAt))
+          .limit(Number(limit)).offset(skip),
+        db.select({ count: count() }).from(pgQuizResults).where(eq(pgQuizResults.userId, userId)),
+      ]);
+      return res.json({ data, total: Number(totalResult[0]?.count || 0) });
+    }
+
+    const data = await QuizResultModel.find({ userId }).sort({ createdAt: -1 }).skip(skip).limit(Number(limit));
+    const total = await QuizResultModel.countDocuments({ userId });
+    return res.json({ data, total });
   }),
 );

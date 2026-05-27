@@ -1,6 +1,7 @@
 
 import React from 'react';
 import { MainLayout } from './MainLayout';
+import { PwaInstallBanner } from './PwaInstallBanner';
 
 // Re-exporting MainLayout as Layout to maintain compatibility with existing imports
 // or simply replacing the content if we want to keep the file name.
@@ -13,6 +14,7 @@ interface LayoutProps {
 const Layout: React.FC<LayoutProps> = ({ children }) => {
     return (
         <MainLayout>
+            <PwaInstallBanner />
             {children}
         </MainLayout>
     );
