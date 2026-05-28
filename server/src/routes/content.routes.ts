@@ -7,7 +7,7 @@ import { z } from "zod";
 import { optionalAuth, requireAuth, requireRole } from "../middleware/auth.js";
 import { asyncHandler } from "../utils/asyncHandler.js";
 import { db } from "../db/connection.js";
-import { topics as pgTopics, lessons as pgLessons, libraryItems as pgLibraryItems, groups as pgGroups, b2bPackages as pgB2bPackages, accessCodes as pgAccessCodes, studyPlans as pgStudyPlans, homepageSettings, announcementAds, platformIntegrationSettings } from "../db/schema/index.js";
+import { paths as pgPaths, subjects as pgSubjects, topics as pgTopics, lessons as pgLessons, libraryItems as pgLibraryItems, groups as pgGroups, b2bPackages as pgB2bPackages, accessCodes as pgAccessCodes, studyPlans as pgStudyPlans, homepageSettings, announcementAds, platformIntegrationSettings } from "../db/schema/index.js";
 import { TopicModel } from "../models/Topic.js";
 import { LessonModel } from "../models/Lesson.js";
 import { LibraryItemModel } from "../models/LibraryItem.js";

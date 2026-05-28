@@ -41,8 +41,8 @@ async function buildSeoEntries(): Promise<SeoEntry[]> {
 
   if (USE_PG()) {
     [paths, subjects] = await Promise.all([
-      db.select().from(pgPaths).where(eq(pgPaths.isActive, true)).orderBy(pgPaths.createdAt),
-      db.select().from(pgSubjects).orderBy(pgSubjects.createdAt),
+      db.select().from(pgPaths).where(eq(pgPaths.isActive, true)).orderBy(pgPaths.name),
+      db.select().from(pgSubjects).orderBy(pgSubjects.name),
     ]);
   } else {
     [paths, subjects] = await Promise.all([

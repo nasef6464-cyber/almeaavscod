@@ -67,7 +67,10 @@ operationsRouter.post(
     if (USE_PG()) {
       await db.insert(clientEvents).values({
         id: crypto.randomUUID(),
-        ...payload,
+        eventType: payload.type,
+        pageUrl: payload.url,
+        metadata: payload.metadata,
+        userAgent: payload.userAgent,
         userId: req.authUser?.id,
       }).returning();
       return res.json({ received: true });

@@ -32,7 +32,7 @@ searchRouter.get(
       }
       if (type === "all" || type === "lessons") {
         const lessonResults = await db.select({ id: lessons.id, title: lessons.title })
-          .from(lessons).where(and(ilike(lessons.title, `%${query}%`), eq(lessons.isPublished, true))).limit(Number(limit));
+          .from(lessons).where(and(ilike(lessons.title, `%${query}%`), eq(lessons.showOnPlatform, true))).limit(Number(limit));
         results.push(...lessonResults.map((r) => ({ ...r, _type: "lesson" })));
       }
       if (type === "all" || type === "questions") {

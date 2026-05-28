@@ -40,7 +40,7 @@ export function createSocketServer(server: HttpServer) {
       try {
         const { createClient } = await import("redis");
         const { createAdapter } = await import("@socket.io/redis-adapter");
-        const pubClient = createClient({ url: env.REDIS_URL, prefix: `${env.REDIS_KEY_PREFIX}:socket:` });
+        const pubClient = createClient({ url: env.REDIS_URL });
         const subClient = pubClient.duplicate();
         await Promise.all([pubClient.connect(), subClient.connect()]);
         io.adapter(createAdapter(pubClient, subClient));

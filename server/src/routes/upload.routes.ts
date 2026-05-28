@@ -70,7 +70,7 @@ uploadRouter.post(
       return res.status(StatusCodes.BAD_REQUEST).json({ message: "No files uploaded" });
     }
 
-    const results = [];
+    const results: Array<Record<string, unknown>> = [];
     for (const _file of files) {
       (req as any).file = _file;
       const result = await handleFileUpload(req, category);

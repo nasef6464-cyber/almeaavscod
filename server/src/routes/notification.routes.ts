@@ -2,7 +2,6 @@ import crypto from "crypto";
 import { Router } from "express";
 import { StatusCodes } from "http-status-codes";
 import { z } from "zod";
-import crypto from "crypto";
 import { asyncHandler } from "../utils/asyncHandler.js";
 import { requireAuth, requireRole } from "../middleware/auth.js";
 import { NotificationDeliveryModel } from "../models/NotificationDelivery.js";
@@ -47,7 +46,7 @@ notificationRouter.post(
     });
     const payload = schema.parse(req.body);
     if (USE_PG()) {
-      const [template] = await db.insert(notificationTemplates).values({ id: crypto.randomUUID(), ...payload }).returning();
+      const [template] = await db.insert(notificationTemplates).values({ id: crypto.randomUUID(), ...payload, enabled: payload.enabled ? 1 : 0 }).returning();
       return res.status(StatusCodes.CREATED).json(template);
     }
 

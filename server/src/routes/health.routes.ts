@@ -80,19 +80,21 @@ healthRouter.get("/scale-ready", async (_req, res) => {
   };
   const allOk = Object.values(checks).every((c) => c.ok);
 
-  res.status(allOk ? 200 : 503).json({
-    service: "The Hundred Platform API",
-    ready: allOk ? "yes" : "no",
-    scaleReady: redisConfiguredForScale,
-    databaseReady: dbReady,
-    dependencies: {
-      ok: allOk,
-      checks,
-      summary: {
-        redisConfiguredForScale,
-        message: redisConfiguredForScale ? "redis_configured_for_multi_instance_scale" : "redis_not_configured_for_multi_instance_scale",
-      },
+  const databaseReady = dbReady;
+  const deps = {
+    ok: allOk,
+    checks,
+    summary: {
+      redisConfiguredForScale,
+      message: redisConfiguredForScale ? "redis_configured_for_multi_instance_scale" : "redis_not_configured_for_multi_instance_scale",
     },
+  };
+  res.status(databaseReady ? 200 : 503).json({
+    service: "The Hundred Platform API",
+    ready: deps.ok,
+    databaseReady,
+    scaleReady: deps.summary.redisConfiguredForScale,
+    dependencies: deps,
     gitCommit: process.env.RENDER_GIT_COMMIT || "unknown",
     uptimeSeconds: Math.floor(process.uptime()),
     timestamp: new Date().toISOString(),
