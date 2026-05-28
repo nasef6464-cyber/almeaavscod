@@ -78,9 +78,6 @@ const SESSION_STORAGE_KEY = "the-hundred-auth-profile";
 const CSRF_COOKIE_NAME = "almeaa_csrf_token";
 const CSRF_HEADER_NAME = "x-csrf-token";
 const CSRF_SESSION_STORAGE_KEY = "almeaa:csrf-token";
-const COOKIE_FIRST_AUTH_ENABLED =
-  (import.meta as ImportMeta & { env?: Record<string, string | boolean> }).env?.VITE_AUTH_COOKIE_FIRST !== "false";
-
 const getPublicCacheStorage = (): Storage | null => {
   try {
     return typeof globalThis !== "undefined" && "sessionStorage" in globalThis ? globalThis.sessionStorage : null;
@@ -90,10 +87,6 @@ const getPublicCacheStorage = (): Storage | null => {
 };
 
 const getStoredSessionToken = (): string | null => {
-  if (COOKIE_FIRST_AUTH_ENABLED) {
-    return null;
-  }
-
   try {
     const raw = sessionStorage.getItem(SESSION_STORAGE_KEY);
     if (!raw) {
@@ -165,7 +158,7 @@ const ensureCsrfToken = async () => {
 async function request<T>(path: string, options: RequestOptions = {}, retryingAfterCsrfRefresh = false): Promise<T> {
   const resolvedToken =
     options.token === undefined
-      ? (COOKIE_FIRST_AUTH_ENABLED ? null : getStoredSessionToken())
+      ? getStoredSessionToken()
       : options.token;
   const startedAt = performance.now();
 
